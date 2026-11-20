@@ -1,0 +1,23 @@
+name: LedgerApp
+options:
+  deploymentTarget:
+    iOS: "15.0"
+  createIntermediateGroups: true
+targets:
+  LedgerApp:
+    type: application
+    platform: iOS
+    sources:
+      - path: LedgerApp
+        excludes:
+          - Info.plist
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.mazexin.Bookkeeping
+      INFOPLIST_FILE: LedgerApp/Info.plist
+      CODE_SIGNING_ALLOWED: NO
+      CODE_SIGNING_REQUIRED: NO
+      CODE_SIGN_IDENTITY: ""
+      ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+      TARGETED_DEVICE_FAMILY: "1,2"
+      SUPPORTED_PLATFORMS: iphoneos
+      SWIFT_VERSION: "5.0"

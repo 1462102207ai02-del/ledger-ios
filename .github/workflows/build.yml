@@ -1,0 +1,57 @@
+name: Build TrollStore IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: brew install xcodegen ldid
+
+      - name: Generate Xcode project
+        run: xcodegen generate --spec project.yml
+
+      - name: Build unsigned app
+        run: |
+          xcodebuild \
+            -project LedgerApp.xcodeproj \
+            -scheme LedgerApp \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Package IPA with pseudo-signature
+        run: |
+          APP_PATH="build/Build/Products/Release-iphoneos/LedgerApp.app"
+          if [ ! -d "$APP_PATH" ]; then
+            echo "::error::App bundle not found at $APP_PATH"
+            exit 1
+          fi
+          ldid -S "$APP_PATH/LedgerApp"
+          mkdir -p Payload
+          cp -R "$APP_PATH" Payload/LedgerApp.app
+          zip -qry LedgerApp-TrollStore.ipa Payload
+          ls -lh LedgerApp-TrollStore.ipa
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: LedgerApp-TrollStore
+          path: LedgerApp-TrollStore.ipa
+          if-no-files-found: error
+          retention-days: 30
