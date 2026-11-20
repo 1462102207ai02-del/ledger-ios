@@ -25,8 +25,6 @@ struct AddRecordView: View {
         amount > 0 && !categoryName.isEmpty && !paymentName.isEmpty
     }
 
-    private let gridColumns = [GridItem(.adaptive(minimum: 88), spacing: 10)]
-
     var body: some View {
         NavigationView {
             Form {
@@ -43,14 +41,9 @@ struct AddRecordView: View {
                 }
 
                 Section(header: Text(type == .expense ? "支出项目" : "收入项目")) {
-                    LazyVGrid(columns: gridColumns, spacing: 10) {
-                        ForEach(availableCategories) { c in
-                            choiceButton(title: c.name, isSelected: categoryName == c.name) {
-                                categoryName = c.name
-                            }
-                        }
+                    selectionMenu(title: categoryName, options: availableCategories.map(\.name)) { name in
+                        categoryName = name
                     }
-                    .padding(.vertical, 4)
                 }
 
                 Section(header: Text("金额")) {
@@ -62,18 +55,14 @@ struct AddRecordView: View {
                 }
 
                 Section(header: Text("支付方式")) {
-                    LazyVGrid(columns: gridColumns, spacing: 10) {
-                        ForEach(store.paymentMethods) { m in
-                            choiceButton(title: m.name, isSelected: paymentName == m.name) {
-                                paymentName = m.name
-                            }
-                        }
+                    selectionMenu(title: paymentName, options: store.paymentMethods.map(\.name)) { name in
+                        paymentName = name
                     }
-                    .padding(.vertical, 4)
                 }
 
                 Section(header: Text("日期")) {
                     DatePicker("日期", selection: $date, displayedComponents: [.date])
+                        .environment(\.locale, Locale(identifier: "zh_CN"))
                 }
 
                 Section(header: Text("备注")) {
@@ -100,30 +89,35 @@ struct AddRecordView: View {
         }
     }
 
-    /// iOS 系统扁平按钮：选中态用强调填充，未选中用描边。
-    @ViewBuilder
-    private func choiceButton(title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
-        if isSelected {
-            Button(action: action) {
-                Text(title)
-                    .font(.subheadline)
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity, minHeight: 36)
+    /// iOS 扁平按钮：按钮本身显示当前选中项，点按弹出菜单选择，选项不平铺。
+    private func selectionMenu(title: String, options: [String], onSelect: @escaping (String) -> Void) -> some View {
+        Menu {
+            ForEach(options, id: \.self) { option in
+                Button {
+                    onSelect(option)
+                } label: {
+                    HStack {
+                        Text(option)
+                        if option == title {
+                            Spacer()
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
             }
-            .buttonStyle(.borderedProminent)
-            .buttonBorderShape(.roundedRectangle(radius: 8))
-            .controlSize(.regular)
-        } else {
-            Button(action: action) {
-                Text(title)
-                    .font(.subheadline)
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity, minHeight: 36)
+        } label: {
+            HStack {
+                Text(title.isEmpty ? "请选择" : title)
+                Spacer()
+                Image(systemName: "chevron.up.chevron.down")
+                    .foregroundStyle(.secondary)
+                    .imageScale(.small)
             }
-            .buttonStyle(.bordered)
-            .buttonBorderShape(.roundedRectangle(radius: 8))
-            .controlSize(.regular)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.bordered)
+        .buttonBorderShape(.roundedRectangle(radius: 8))
+        .controlSize(.regular)
     }
 
     private func setupDefaults() {
