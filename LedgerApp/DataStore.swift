@@ -61,6 +61,21 @@ final class DataStore: ObservableObject {
         persist()
     }
 
+    /// 重命名项目，并同步更新以名称存储的历史账目，避免统计被拆成新旧两项。
+    func renameCategory(_ category: Category, to newName: String) {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        guard !categories.contains(where: { $0.id != category.id && $0.name == trimmed }) else { return }
+        let oldName = category.name
+        guard let idx = categories.firstIndex(where: { $0.id == category.id }) else { return }
+        categories[idx].name = trimmed
+        for i in records.indices
+        where records[i].type == category.type && records[i].categoryName == oldName {
+            records[i].categoryName = trimmed
+        }
+        persist()
+    }
+
     // MARK: 支付方式
     func addPaymentMethod(name: String, icon: String = "💳") {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -71,6 +86,20 @@ final class DataStore: ObservableObject {
 
     func deletePaymentMethod(_ method: PaymentMethod) {
         paymentMethods.removeAll { $0.id == method.id }
+        persist()
+    }
+
+    /// 重命名支付方式，并同步更新以名称存储的历史账目。
+    func renamePaymentMethod(_ method: PaymentMethod, to newName: String) {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        guard !paymentMethods.contains(where: { $0.id != method.id && $0.name == trimmed }) else { return }
+        let oldName = method.name
+        guard let idx = paymentMethods.firstIndex(where: { $0.id == method.id }) else { return }
+        paymentMethods[idx].name = trimmed
+        for i in records.indices where records[i].paymentMethodName == oldName {
+            records[i].paymentMethodName = trimmed
+        }
         persist()
     }
 
