@@ -42,6 +42,9 @@ jobs:
             echo "::error::App bundle not found at $APP_PATH"
             exit 1
           fi
+          # 隐私清单必须位于 .app 根目录，显式注入以确保上架合规
+          cp LedgerApp/PrivacyInfo.xcprivacy "$APP_PATH/PrivacyInfo.xcprivacy"
+          test -f "$APP_PATH/PrivacyInfo.xcprivacy" || { echo "::error::privacy manifest missing"; exit 1; }
           ldid -S "$APP_PATH/LedgerApp"
           mkdir -p Payload
           cp -R "$APP_PATH" Payload/LedgerApp.app
