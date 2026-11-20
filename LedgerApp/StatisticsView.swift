@@ -34,7 +34,8 @@ struct StatisticsView: View {
         for r in monthRecords where r.type == .expense {
             dict[r.paymentMethodName, default: 0] += r.amount
         }
-        return dict.sorted { $0.value > $1.value }
+        return dict.map { (name: $0.key, value: $0.value) }
+                   .sorted { $0.value > $1.value }
     }
 
     private func icon(for name: String) -> String {

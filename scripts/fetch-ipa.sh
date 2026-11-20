@@ -16,8 +16,13 @@ detect_desktop() {
 }
 DESKTOP="$(detect_desktop)"
 
-# 从 git 凭证管理器拿 token（不打印明文）
-TOKEN="$(printf "protocol=https\nhost=github.com\n\n" | git credential fill 2>/dev/null | grep '^password=' | cut -d= -f2-)"
+# 优先读缓存 token（避免凭证管理器反复弹窗），没有再回退到 git credential
+TOKEN=""
+if [ -s /tmp/gh_token ]; then TOKEN="$(cat /tmp/gh_token)"; fi
+if [ -z "$TOKEN" ]; then
+  TOKEN="$(printf "protocol=https\nhost=github.com\n\n" | git credential fill 2>/dev/null | grep '^password=' | cut -d= -f2-)"
+  [ -n "$TOKEN" ] && printf '%s' "$TOKEN" > /tmp/gh_token
+fi
 if [ -z "$TOKEN" ]; then
   echo "❌ 未找到 GitHub token，请先确保 git 已登录（credential.helper=manager）"
   exit 1
