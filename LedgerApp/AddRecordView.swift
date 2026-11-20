@@ -43,7 +43,7 @@ struct AddRecordView: View {
                 Section(header: Text(type == .expense ? "支出项目" : "收入项目")) {
                     Picker("项目", selection: $categoryName) {
                         ForEach(availableCategories) { c in
-                            Text("\(c.icon) \(c.name)").tag(c.name)
+                            Text(c.name).tag(c.name)
                         }
                     }
                 }
@@ -59,13 +59,13 @@ struct AddRecordView: View {
                 Section(header: Text("支付方式")) {
                     Picker("支付方式", selection: $paymentName) {
                         ForEach(store.paymentMethods) { m in
-                            Text("\(m.icon) \(m.name)").tag(m.name)
+                            Text(m.name).tag(m.name)
                         }
                     }
                 }
 
                 Section(header: Text("日期")) {
-                    DatePicker("时间", selection: $date, displayedComponents: [.date, .hourAndMinute])
+                    DatePicker("日期", selection: $date, displayedComponents: [.date])
                 }
 
                 Section(header: Text("备注（可选）")) {
@@ -83,6 +83,7 @@ struct AddRecordView: View {
                     .disabled(!canSave)
                 }
             }
+            .dismissKeyboardOnTap()
             .navigationTitle("记一笔")
             .onAppear(perform: setupDefaults)
             .alert(isPresented: $showSaved) {

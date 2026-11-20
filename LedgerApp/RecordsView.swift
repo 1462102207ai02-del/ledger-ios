@@ -22,7 +22,7 @@ struct RecordsView: View {
                 } else {
                     List {
                         ForEach(sortedRecords) { record in
-                            RecordRow(record: record, icon: iconName(for: record))
+                            RecordRow(record: record)
                         }
                         .onDelete { indexSet in
                             for i in indexSet {
@@ -36,24 +36,13 @@ struct RecordsView: View {
         }
     }
 
-    private func iconName(for record: Transaction) -> String {
-        store.categories.first { $0.name == record.categoryName }?.icon ?? "🧾"
-    }
 }
 
 private struct RecordRow: View {
     let record: Transaction
-    let icon: String
 
     var body: some View {
         HStack(spacing: 12) {
-            ZStack {
-                Circle()
-                    .fill(record.type == .expense ? Color.red.opacity(0.12) : Color.green.opacity(0.12))
-                Text(icon).font(.system(size: 18))
-            }
-            .frame(width: 40, height: 40)
-
             VStack(alignment: .leading, spacing: 4) {
                 Text(record.categoryName).font(.system(size: 15, weight: .medium))
                 HStack(spacing: 6) {
@@ -81,7 +70,7 @@ private struct RecordRow: View {
 
     private func formatDate(_ d: Date) -> String {
         let f = DateFormatter()
-        f.dateFormat = "MM-dd HH:mm"
+        f.dateFormat = "yyyy-MM-dd"
         return f.string(from: d)
     }
 }

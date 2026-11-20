@@ -5,7 +5,7 @@ set -uo pipefail
 
 OWNER="1462102207ai02-del"
 REPO="ledger-ios"
-BASELINE_ID="44662273158"   # 触发前最后一次运行的 id，只认比它更新的
+BASELINE_ID="44663992660"   # 触发前最后一次运行的 id，只认比它更新的
 
 TOKEN=""
 if [ -s /tmp/gh_token ]; then TOKEN="$(cat /tmp/gh_token)"; fi

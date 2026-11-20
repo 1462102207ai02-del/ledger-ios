@@ -5,7 +5,7 @@ set -euo pipefail
 
 OWNER="1462102207ai02-del"
 REPO="ledger-ios"
-ARTIFACT_NAME="LedgerApp-TrollStore"
+ARTIFACT_NAME="快捷记账"
 
 # 自动探测桌面路径（Windows Git Bash / macOS / Linux）
 detect_desktop() {
@@ -47,11 +47,12 @@ echo "    构建 #$RUN_ID"
 
 echo "==> 查找 ipa 产物..."
 ART_JSON="$(curl -s --max-time 30 "${HDR[@]}" "$API/actions/runs/$RUN_ID/artifacts")"
-ART_ID="$(echo "$ART_JSON" | python -c "
-import sys,json
+ART_ID="$(echo "$ART_JSON" | ART_NAME="$ARTIFACT_NAME" python -c "
+import sys,json,os
 d=json.load(sys.stdin)
+name=os.environ['ART_NAME']
 for a in d.get('artifacts',[]):
-    if a['name']=='$ARTIFACT_NAME' and not a.get('expired'):
+    if a['name']==name and not a.get('expired'):
         print(a['id']); break
 " 2>/dev/null || true)"
 if [ -z "$ART_ID" ]; then
@@ -72,7 +73,7 @@ if [ -z "$IPA" ]; then
   exit 1
 fi
 
-TARGET="$DESKTOP/LedgerApp-TrollStore.ipa"
+TARGET="$DESKTOP/快捷记账.ipa"
 cp "$IPA" "$TARGET"
 echo "✅ 已放到桌面：$TARGET"
 ls -lh "$TARGET" | awk '{print "    大小: "$5}'

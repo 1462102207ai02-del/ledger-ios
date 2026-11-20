@@ -20,12 +20,12 @@ struct StatisticsView: View {
         monthRecords.filter { $0.type == .income }.reduce(0) { $0 + $1.amount }
     }
 
-    private var categorySums: [(name: String, value: Double, icon: String)] {
+    private var categorySums: [(name: String, value: Double)] {
         var dict: [String: Double] = [:]
         for r in monthRecords where r.type == .expense {
             dict[r.categoryName, default: 0] += r.amount
         }
-        return dict.map { (name: $0.key, value: $0.value, icon: icon(for: $0.key)) }
+        return dict.map { (name: $0.key, value: $0.value) }
                    .sorted { $0.value > $1.value }
     }
 
@@ -36,10 +36,6 @@ struct StatisticsView: View {
         }
         return dict.map { (name: $0.key, value: $0.value) }
                    .sorted { $0.value > $1.value }
-    }
-
-    private func icon(for name: String) -> String {
-        store.categories.first { $0.name == name }?.icon ?? "🧾"
     }
 
     var body: some View {
@@ -77,7 +73,7 @@ struct StatisticsView: View {
             } else {
                 let maxValue = categorySums.first?.value ?? 1
                 ForEach(categorySums, id: \.name) { item in
-                    BarRow(title: "\(item.icon) \(item.name)", value: item.value,
+                    BarRow(title: item.name, value: item.value,
                            ratio: maxValue > 0 ? item.value / maxValue : 0, color: .red)
                 }
             }
