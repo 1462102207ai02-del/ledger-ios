@@ -5,7 +5,7 @@ set -euo pipefail
 
 OWNER="1462102207ai02-del"
 REPO="ledger-ios"
-ARTIFACT_NAME="快捷记账"
+ARTIFACT_NAME="LedgerApp-TrollStore"
 
 # 自动探测桌面路径（Windows Git Bash / macOS / Linux）
 detect_desktop() {
