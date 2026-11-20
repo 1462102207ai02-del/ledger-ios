@@ -41,7 +41,8 @@ struct AddRecordView: View {
                 }
 
                 Section(header: Text(type == .expense ? "支出项目" : "收入项目")) {
-                    selectionMenu(title: categoryName, options: availableCategories.map(\.name)) { name in
+                    selectionMenu(title: categoryName, options: availableCategories.map(\.name),
+                                  systemImage: "square.grid.2x2") { name in
                         categoryName = name
                     }
                 }
@@ -55,7 +56,8 @@ struct AddRecordView: View {
                 }
 
                 Section(header: Text("支付方式")) {
-                    selectionMenu(title: paymentName, options: store.paymentMethods.map(\.name)) { name in
+                    selectionMenu(title: paymentName, options: store.paymentMethods.map(\.name),
+                                  systemImage: "creditcard") { name in
                         paymentName = name
                     }
                 }
@@ -89,8 +91,9 @@ struct AddRecordView: View {
         }
     }
 
-    /// iOS 扁平按钮：按钮本身显示当前选中项，点按弹出菜单选择，选项不平铺。
-    private func selectionMenu(title: String, options: [String], onSelect: @escaping (String) -> Void) -> some View {
+    /// 扁平选择按钮：浅灰圆角行内显示图标与当前选中项，点按弹出菜单选择。
+    private func selectionMenu(title: String, options: [String], systemImage: String,
+                               onSelect: @escaping (String) -> Void) -> some View {
         Menu {
             ForEach(options, id: \.self) { option in
                 Button {
@@ -106,18 +109,26 @@ struct AddRecordView: View {
                 }
             }
         } label: {
-            HStack {
+            HStack(spacing: 10) {
+                Image(systemName: systemImage)
+                    .foregroundColor(.accentColor)
+                    .frame(width: 22)
                 Text(title.isEmpty ? "请选择" : title)
+                    .foregroundColor(.primary)
                 Spacer()
                 Image(systemName: "chevron.up.chevron.down")
-                    .foregroundStyle(.secondary)
+                    .foregroundColor(.secondary)
                     .imageScale(.small)
             }
+            .padding(.vertical, 10)
+            .padding(.horizontal, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color(.systemGray6))
+            )
             .contentShape(Rectangle())
         }
-        .buttonStyle(.bordered)
-        .buttonBorderShape(.roundedRectangle(radius: 8))
-        .controlSize(.regular)
+        .buttonStyle(.plain)
     }
 
     private func setupDefaults() {
