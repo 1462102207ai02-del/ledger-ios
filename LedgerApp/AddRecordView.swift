@@ -25,6 +25,8 @@ struct AddRecordView: View {
         amount > 0 && !categoryName.isEmpty && !paymentName.isEmpty
     }
 
+    private let gridColumns = [GridItem(.adaptive(minimum: 88), spacing: 10)]
+
     var body: some View {
         NavigationView {
             Form {
@@ -34,18 +36,21 @@ struct AddRecordView: View {
                             Text(t.rawValue).tag(t)
                         }
                     }
-                    .pickerStyle(SegmentedPickerStyle())
+                    .pickerStyle(.segmented)
                     .onChange(of: type) { newValue in
                         categoryName = store.categories.first { $0.type == newValue }?.name ?? ""
                     }
                 }
 
                 Section(header: Text(type == .expense ? "支出项目" : "收入项目")) {
-                    Picker("项目", selection: $categoryName) {
+                    LazyVGrid(columns: gridColumns, spacing: 10) {
                         ForEach(availableCategories) { c in
-                            Text(c.name).tag(c.name)
+                            choiceButton(title: c.name, isSelected: categoryName == c.name) {
+                                categoryName = c.name
+                            }
                         }
                     }
+                    .padding(.vertical, 4)
                 }
 
                 Section(header: Text("金额")) {
@@ -57,18 +62,21 @@ struct AddRecordView: View {
                 }
 
                 Section(header: Text("支付方式")) {
-                    Picker("支付方式", selection: $paymentName) {
+                    LazyVGrid(columns: gridColumns, spacing: 10) {
                         ForEach(store.paymentMethods) { m in
-                            Text(m.name).tag(m.name)
+                            choiceButton(title: m.name, isSelected: paymentName == m.name) {
+                                paymentName = m.name
+                            }
                         }
                     }
+                    .padding(.vertical, 4)
                 }
 
                 Section(header: Text("日期")) {
                     DatePicker("日期", selection: $date, displayedComponents: [.date])
                 }
 
-                Section(header: Text("备注（可选）")) {
+                Section(header: Text("备注")) {
                     TextField("说点什么…", text: $note)
                 }
 
@@ -89,6 +97,32 @@ struct AddRecordView: View {
             .alert(isPresented: $showSaved) {
                 Alert(title: Text("已保存"), message: Text(savedMessage), dismissButton: .default(Text("好")))
             }
+        }
+    }
+
+    /// iOS 系统扁平按钮：选中态用强调填充，未选中用描边。
+    @ViewBuilder
+    private func choiceButton(title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        if isSelected {
+            Button(action: action) {
+                Text(title)
+                    .font(.subheadline)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, minHeight: 36)
+            }
+            .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.roundedRectangle(radius: 8))
+            .controlSize(.regular)
+        } else {
+            Button(action: action) {
+                Text(title)
+                    .font(.subheadline)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, minHeight: 36)
+            }
+            .buttonStyle(.bordered)
+            .buttonBorderShape(.roundedRectangle(radius: 8))
+            .controlSize(.regular)
         }
     }
 

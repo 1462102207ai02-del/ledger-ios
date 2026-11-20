@@ -6,19 +6,14 @@ struct SettingsView: View {
     @State private var newExpense = ""
     @State private var newIncome = ""
     @State private var newPayment = ""
+    @State private var showResetConfirm = false
 
     var body: some View {
         NavigationView {
             Form {
                 Section(header: Text("支出项目")) {
                     ForEach(store.categories.filter { $0.type == .expense }) { c in
-                        HStack {
-                            Text(c.name)
-                            Spacer()
-                            if c.isBuiltIn {
-                                Text("预置").font(.caption).foregroundColor(.secondary)
-                            }
-                        }
+                        Text(c.name)
                     }
                     .onDelete { idx in
                         let list = store.categories.filter { $0.type == .expense }
@@ -36,13 +31,7 @@ struct SettingsView: View {
 
                 Section(header: Text("收入项目")) {
                     ForEach(store.categories.filter { $0.type == .income }) { c in
-                        HStack {
-                            Text(c.name)
-                            Spacer()
-                            if c.isBuiltIn {
-                                Text("预置").font(.caption).foregroundColor(.secondary)
-                            }
-                        }
+                        Text(c.name)
                     }
                     .onDelete { idx in
                         let list = store.categories.filter { $0.type == .income }
@@ -76,16 +65,23 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    Button("恢复预置项目") {
-                        store.resetToDefaults()
+                    Button(role: .destructive) {
+                        showResetConfirm = true
+                    } label: {
+                        Text("恢复预置项目")
                     }
-                    .foregroundColor(.orange)
-                } footer: {
-                    Text("数据仅保存在本机 App 沙盒中，卸载 App 会一并删除。")
                 }
             }
             .dismissKeyboardOnTap()
             .navigationTitle("设置")
+            .alert("恢复预置项目？", isPresented: $showResetConfirm) {
+                Button("取消", role: .cancel) {}
+                Button("恢复", role: .destructive) {
+                    store.resetToDefaults()
+                }
+            } message: {
+                Text("自定义的项目与支付方式会被移除，已记录的账目不受影响。")
+            }
         }
     }
 }

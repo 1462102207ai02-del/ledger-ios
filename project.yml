@@ -11,6 +11,9 @@ targets:
       - path: LedgerApp
         excludes:
           - Info.plist
+          - PrivacyInfo.xcprivacy
+    resources:
+      - path: LedgerApp/PrivacyInfo.xcprivacy
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: com.mazexin.Bookkeeping
       INFOPLIST_FILE: LedgerApp/Info.plist

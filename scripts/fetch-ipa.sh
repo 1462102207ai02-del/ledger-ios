@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# 从 GitHub Actions 拉取最新一次成功构建的 TrollStore ipa 到桌面
-# 用法：bash scripts/fetch-ipa.sh
+# 从 GitHub Actions 拉取成功构建的 TrollStore ipa 到桌面
+# 用法：bash scripts/fetch-ipa.sh [commit短sha]  传了则只拉指定 commit 的构建
 set -euo pipefail
+
+WANT_SHA="${1:-}"
 
 OWNER="1462102207ai02-del"
 REPO="ledger-ios"
@@ -31,13 +33,19 @@ fi
 API="https://api.github.com/repos/$OWNER/$REPO"
 HDR=(-H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28")
 
-echo "==> 查找最近一次成功构建..."
-RUN_JSON="$(curl -s --max-time 30 "${HDR[@]}" "$API/actions/runs?status=success&per_page=10")"
-RUN_ID="$(echo "$RUN_JSON" | python -c "
-import sys,json
+echo "==> 查找成功构建$( [ -n "$WANT_SHA" ] && echo " (commit $WANT_SHA)" )..."
+RUN_JSON="$(curl -s --max-time 30 "${HDR[@]}" "$API/actions/runs?status=success&per_page=20")"
+RUN_ID="$(echo "$RUN_JSON" | WANT="$WANT_SHA" python -c "
+import sys,json,os
 d=json.load(sys.stdin)
+want=os.environ['WANT']
 runs=d.get('workflow_runs',[])
-print(runs[0]['id'] if runs else '')
+if want:
+    for r in runs:
+        if r['head_sha'].startswith(want):
+            print(r['id']); break
+else:
+    if runs: print(runs[0]['id'])
 " 2>/dev/null || true)"
 if [ -z "$RUN_ID" ]; then
   echo "❌ 还没有成功的构建。请先在仓库 Actions 页等待构建变绿，或检查编译日志。"

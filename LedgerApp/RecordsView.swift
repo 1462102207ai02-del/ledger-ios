@@ -17,7 +17,6 @@ struct RecordsView: View {
                             .font(.system(size: 44))
                             .foregroundColor(.secondary)
                         Text("还没有记录").font(.headline)
-                        Text("去「记一笔」开始吧").font(.subheadline).foregroundColor(.secondary)
                     }
                 } else {
                     List {
