@@ -51,7 +51,7 @@ jobs:
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-        name: LedgerApp-TrollStore
-        path: LedgerApp-TrollStore.ipa
+          name: LedgerApp-TrollStore
+          path: LedgerApp-TrollStore.ipa
           if-no-files-found: error
           retention-days: 30
