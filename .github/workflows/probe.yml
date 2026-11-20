@@ -1,0 +1,14 @@
+name: Runner Probe
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, macos-15, macos-14, macos-13]
+    steps:
+      - name: Check runner
+        run: echo "runner OK on ${{ matrix.os }} / $(sw_vers 2>/dev/null || echo unknown)"
