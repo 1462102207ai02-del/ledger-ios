@@ -117,26 +117,30 @@ struct LedgerWidgetView: View {
     private var netColor: Color { entry.todayNet >= 0 ? .green : .red }
 
     private var smallView: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text("今日")
-                .font(.headline)
-            Text(netTitle)
+        VStack(spacing: 0) {
+            Spacer(minLength: 0) // 上下对称 Spacer，确保内容块垂直居中
+            VStack(alignment: .leading, spacing: 5) {
+                Text("今日")
+                    .font(.headline)
+                Text(netTitle)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                Text(money(abs(entry.todayNet)))
+                    .font(.system(size: 25, weight: .bold))
+                    .foregroundColor(netColor)
+                    .minimumScaleFactor(0.7)
+                    .lineLimit(1)
+                HStack(spacing: 8) {
+                    Text("支 \(money(entry.todayExpense))").foregroundColor(.red)
+                    Text("收 \(money(entry.todayIncome))").foregroundColor(.green)
+                }
                 .font(.caption2)
-                .foregroundColor(.secondary)
-            Text(money(abs(entry.todayNet)))
-                .font(.system(size: 25, weight: .bold))
-                .foregroundColor(netColor)
-                .minimumScaleFactor(0.7)
                 .lineLimit(1)
-            HStack(spacing: 8) {
-                Text("支 \(money(entry.todayExpense))").foregroundColor(.red)
-                Text("收 \(money(entry.todayIncome))").foregroundColor(.green)
             }
-            .font(.caption2)
-            .lineLimit(1)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(maxHeight: .infinity, alignment: .center) // 整体垂直居中于组件
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
     }
 
@@ -227,14 +231,6 @@ struct LedgerWidgetView: View {
                         .foregroundColor(netColor)
                         .minimumScaleFactor(0.7)
                         .lineLimit(1)
-                    Spacer(minLength: 4)
-                    HStack(spacing: 6) {
-                        Text("支 \(money(entry.todayExpense))").foregroundColor(.red)
-                        Text("收 \(money(entry.todayIncome))").foregroundColor(.green)
-                    }
-                    .font(.caption2)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.75)
                 }
             }
             Divider()
@@ -271,6 +267,16 @@ struct LedgerWidgetView: View {
                     }
                     Spacer(minLength: 0)
                 }
+            }
+            // 右下角今日收支：字号与最近记录项一致（footnote）
+            HStack {
+                Spacer(minLength: 0)
+                HStack(spacing: 8) {
+                    Text("支 \(money(entry.todayExpense))").foregroundColor(.red)
+                    Text("收 \(money(entry.todayIncome))").foregroundColor(.green)
+                }
+                .font(.footnote)
+                .lineLimit(1)
             }
         }
         .padding()
