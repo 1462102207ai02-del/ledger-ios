@@ -11,7 +11,7 @@ enum BaiduOCR {
     private static let tokenURL = "https://aip.baidubce.com/oauth/2.0/token"
     private static let recognizeURL = "https://aip.baidubce.com/rest/2.0/ocr/v1/accurate_basic"
 
-    struct Result {
+    struct OCRResult {
         let lines: [String]
         var fullText: String { lines.joined(separator: "\n") }
     }
@@ -28,7 +28,7 @@ enum BaiduOCR {
     }
 
     /// 主线程调用；网络请求在后台队列，结果回调回主线程。
-    static func recognize(image: UIImage, completion: @escaping (Result<Result, Error>) -> Void) {
+    static func recognize(image: UIImage, completion: @escaping (Result<OCRResult, Error>) -> Void) {
         guard let data = image.pngData() else {
             completion(.failure(OCRFailure.parse("图片无法读取"))); return
         }
@@ -64,7 +64,7 @@ enum BaiduOCR {
     }
 
     private static func postImage(_ data: Data, token: String,
-                                  _ completion: @escaping (Result<Result, Error>) -> Void) {
+                                  _ completion: @escaping (Result<OCRResult, Error>) -> Void) {
         let base64 = data.base64EncodedString()
         let body = "image=" + base64.addingPercentEncoding(withAllowedCharacters: .alphanumerics)!
         var request = URLRequest(url: URL(string: "\(recognizeURL)?access_token=\(token)")!)
@@ -82,7 +82,7 @@ enum BaiduOCR {
                 }
                 let rows = json["words_result"] as? [[String: Any]] ?? []
                 let lines = rows.compactMap { $0["words"] as? String }
-                completion(.success(Result(lines: lines)))
+                completion(.success(OCRResult(lines: lines)))
             } catch {
                 completion(.failure(OCRFailure.parse("返回数据解析失败")))
             }
