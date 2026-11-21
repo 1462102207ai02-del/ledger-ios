@@ -17,7 +17,9 @@ targets:
       - path: LedgerApp/PrivacyInfo.xcprivacy
     entitlements:
       path: LedgerApp/LedgerApp.entitlements
-      properties: {}
+      properties:
+        com.apple.security.application-groups:
+          - group.com.mazexin.Bookkeeping
     dependencies:
       - target: LedgerWidget
         embed: true
@@ -46,7 +48,9 @@ targets:
       - path: LedgerWidget/PrivacyInfo.xcprivacy
     entitlements:
       path: LedgerWidget/LedgerWidget.entitlements
-      properties: {}
+      properties:
+        com.apple.security.application-groups:
+          - group.com.mazexin.Bookkeeping
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: com.mazexin.Bookkeeping.widget
       INFOPLIST_FILE: LedgerWidget/Info.plist
