@@ -30,11 +30,11 @@ struct AddRecordView: View {
             Form {
                 Section {
                     Button {
-                        NotificationCenter.default.post(name: .openOCR, object: nil)
+                        NotificationCenter.default.post(name: .pasteboardOCR, object: nil)
                     } label: {
                         HStack {
                             Image(systemName: "doc.text.viewfinder").foregroundColor(.accentColor)
-                            Text("截图识别记账").foregroundColor(.primary)
+                            Text("识别粘贴板内容").foregroundColor(.primary)
                             Spacer()
                             Image(systemName: "chevron.right").foregroundColor(.secondary)
                                 .imageScale(.small)

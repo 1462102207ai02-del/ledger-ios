@@ -9,8 +9,10 @@ enum ClipboardOCR {
         var payee: String = ""
         var rawText: String = ""
         var fromImage: Bool = false
-
-        var isEmpty: Bool { amount.isEmpty && payee.isEmpty }
+        /// 粘贴板确实有可用内容（文字非空 / 有图片）。无内容时不弹窗。
+        var hadContent: Bool = false
+        /// OCR 失败的说明，供弹窗提示用户手动填写。
+        var errorMessage: String = ""
     }
 
     /// 读取粘贴板并识别。图片走 OCR（异步），文字直接解析，结果回主线程。
@@ -18,18 +20,22 @@ enum ClipboardOCR {
         let pb = UIPasteboard.general
         if let image = pb.image {
             BaiduOCR.recognize(image: image) { result in
+                var d = Draft()
+                d.fromImage = true
+                d.hadContent = true // 有截图，即便 OCR 失败也弹窗让用户手填
                 switch result {
                 case .success(let ocr):
-                    var d = parse(text: ocr.fullText)
+                    d = parse(text: ocr.fullText)
                     d.fromImage = true
-                    DispatchQueue.main.async { completion(d) }
-                case .failure:
-                    DispatchQueue.main.async { completion(Draft(fromImage: true)) }
+                    d.hadContent = true
+                case .failure(let err):
+                    d.errorMessage = "图片文字识别失败：\(err.localizedDescription)。请手动填写，或改用复制文字。"
                 }
+                DispatchQueue.main.async { completion(d) }
             }
         } else if let text = pb.string, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             var d = parse(text: text)
-            d.rawText = String(text.prefix(160))
+            d.hadContent = true
             DispatchQueue.main.async { completion(d) }
         } else {
             DispatchQueue.main.async { completion(Draft()) }
@@ -39,27 +45,33 @@ enum ClipboardOCR {
     /// 只解析金额和收款方，其余字段一律不猜。
     static func parse(text: String) -> Draft {
         var d = Draft()
-        d.rawText = String(text.prefix(160))
+        d.rawText = String(text.prefix(200))
         let compact = text.replacingOccurrences(of: " ", with: "")
 
-        // 金额：优先带 ¥/￥ 的数字，其次出现 x.xx 形式，取候选中的最大值。
-        var candidates: [Double] = []
-        if let re = try? NSRegularExpression(pattern: "[¥￥]\\s*([0-9]+(?:\\.[0-9]{1,2})?)") {
+        // 金额候选，按可靠度分层，优先取 ¥/关键词 明确标注的数字，其次两位小数。
+        var strong: [Double] = []   // ¥ 符号、金额类关键词、带「元」
+        var weak: [Double] = []     // 孤立的两位小数
+
+        func appendMatches(_ pattern: String, to bucket: inout [Double]) {
+            guard let re = try? NSRegularExpression(pattern: pattern) else { return }
             let ns = compact as NSString
             for m in re.matches(in: compact, range: NSRange(location: 0, length: ns.length)) {
-                if let r = Range(m.range(at: 1), in: compact),
-                   let v = Double(compact[r]) { candidates.append(v) }
+                // 取最后一个捕获组（各 pattern 都把数字放在捕获组里）
+                let idx = m.numberOfRanges - 1
+                guard idx > 0, let r = Range(m.range(at: idx), in: compact),
+                      let v = Double(compact[r]) else { continue }
+                bucket.append(v)
             }
         }
-        if candidates.isEmpty,
-           let re = try? NSRegularExpression(pattern: "(?<![0-9])([0-9]{1,6}\\.[0-9]{2})(?![0-9])") {
-            let ns = compact as NSString
-            for m in re.matches(in: compact, range: NSRange(location: 0, length: ns.length)) {
-                if let r = Range(m.range(at: 1), in: compact),
-                   let v = Double(compact[r]) { candidates.append(v) }
-            }
+
+        appendMatches("[¥￥]\\s*([0-9]+(?:\\.[0-9]{1,2})?)", to: &strong)
+        appendMatches("(?:金额|实付|付款|支付|合计|总额|价格|收款)[:：为是]?([0-9]+(?:\\.[0-9]{1,2})?)", to: &strong)
+        appendMatches("([0-9]+(?:\\.[0-9]{1,2})?)元", to: &strong)
+        appendMatches("(?<![0-9])([0-9]{1,6}\\.[0-9]{2})(?![0-9])", to: &weak)
+
+        if let max = (strong.isEmpty ? weak : strong).max() {
+            d.amount = String(format: "%.2f", max)
         }
-        if let max = candidates.max() { d.amount = String(format: "%.2f", max) }
 
         // 收款方：常见标签后紧跟的名称，取到换行/空格/标点为止。
         let labels = ["收款商户名称", "收款商户", "商户名称", "收款方名称",
@@ -67,7 +79,7 @@ enum ClipboardOCR {
         for label in labels {
             guard let range = compact.range(of: label) else { continue }
             let tail = String(compact[range.upperBound...])
-                .trimmingCharacters(in: CharacterSet(charactersIn: ":：·-— "))
+                .trimmingCharacters(in: CharacterSet(charactersIn: ":：·-— \n"))
             var name = ""
             for ch in tail {
                 if ch.isWhitespace || ch == "¥" || ch == "￥" || ch == "(" || ch == "（"

@@ -106,6 +106,23 @@ struct ConfirmDraftView: View {
                     TextField("可选", text: $note)
                 }
 
+                // 诊断区：显示识别原文与失败原因，便于核对金额/收款方为何未自动填入
+                if !seed.errorMessage.isEmpty || !seed.rawText.isEmpty {
+                    Section(header: Text("识别来源（供核对）")) {
+                        if !seed.errorMessage.isEmpty {
+                            Text(seed.errorMessage)
+                                .font(.caption)
+                                .foregroundColor(.red)
+                        }
+                        if !seed.rawText.isEmpty {
+                            Text(seed.rawText)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .textSelection(.enabled)
+                        }
+                    }
+                }
+
                 Section {
                     Button {
                         save()
