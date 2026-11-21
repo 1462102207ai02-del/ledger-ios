@@ -30,6 +30,33 @@ struct ConfirmDraftView: View {
     var body: some View {
         NavigationView {
             Form {
+                // 粘贴板内容预览：截图显示原图，文字显示全文，便于对照识别结果
+                Section(header: Text(seed.fromImage ? "粘贴板截图（预览）" : "粘贴板文字（预览）")) {
+                    if let img = seed.image {
+                        Image(uiImage: img)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(maxWidth: .infinity)
+                            .cornerRadius(10)
+                    }
+                    if !seed.rawText.isEmpty {
+                        Text(seed.rawText)
+                            .font(.system(size: 14))
+                            .foregroundColor(.primary)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if !seed.errorMessage.isEmpty {
+                        Text(seed.errorMessage)
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
+                    if seed.image == nil && seed.rawText.isEmpty {
+                        Text("（未读取到可预览的内容）")
+                            .font(.caption).foregroundColor(.secondary)
+                    }
+                }
+
                 Section(header: Text("识别结果（可修改）")) {
                     HStack {
                         Text("¥")
@@ -104,23 +131,6 @@ struct ConfirmDraftView: View {
 
                 Section(header: Text("备注")) {
                     TextField("可选", text: $note)
-                }
-
-                // 诊断区：显示识别原文与失败原因，便于核对金额/收款方为何未自动填入
-                if !seed.errorMessage.isEmpty || !seed.rawText.isEmpty {
-                    Section(header: Text("识别来源（供核对）")) {
-                        if !seed.errorMessage.isEmpty {
-                            Text(seed.errorMessage)
-                                .font(.caption)
-                                .foregroundColor(.red)
-                        }
-                        if !seed.rawText.isEmpty {
-                            Text(seed.rawText)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .textSelection(.enabled)
-                        }
-                    }
                 }
 
                 Section {
