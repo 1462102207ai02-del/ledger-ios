@@ -62,7 +62,7 @@ struct LedgerProvider: TimelineProvider {
         let recent = data.records.max { $0.date < $1.date }
         let recentItems = data.records
             .sorted { $0.date > $1.date }
-            .prefix(11)
+            .prefix(13)
             .map { r in
                 RecentItem(id: r.id, name: r.categoryName, amount: r.amount,
                            isExpense: r.type == .expense, timeText: shortTime(r.date))
@@ -117,18 +117,17 @@ struct LedgerWidgetView: View {
     private var netColor: Color { entry.todayNet >= 0 ? .green : .red }
 
     private var smallView: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline, spacing: 5) {
-                Text("今日").font(.caption).foregroundColor(.secondary)
-                Text(netTitle).font(.caption2).foregroundColor(.secondary)
-            }
-            Spacer(minLength: 2)
+        VStack(alignment: .leading, spacing: 5) {
+            Text("今日")
+                .font(.headline)
+            Text(netTitle)
+                .font(.caption2)
+                .foregroundColor(.secondary)
             Text(money(abs(entry.todayNet)))
-                .font(.system(size: 25, weight: .bold)) // 系统原生字体
+                .font(.system(size: 25, weight: .bold))
                 .foregroundColor(netColor)
                 .minimumScaleFactor(0.7)
                 .lineLimit(1)
-            Spacer(minLength: 2)
             HStack(spacing: 8) {
                 Text("支 \(money(entry.todayExpense))").foregroundColor(.red)
                 Text("收 \(money(entry.todayIncome))").foregroundColor(.green)
@@ -136,24 +135,26 @@ struct LedgerWidgetView: View {
             .font(.caption2)
             .lineLimit(1)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxHeight: .infinity, alignment: .center) // 整体垂直居中于组件
         .padding()
     }
 
     private var mediumView: some View {
         HStack(spacing: 14) {
-            // 左：今日
-            VStack(alignment: .leading) {
-                Text("今日").font(.caption2).foregroundColor(.secondary)
-                Spacer(minLength: 3)
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text(netTitle).font(.caption2).foregroundColor(.secondary)
-                    Text(money(abs(entry.todayNet)))
-                        .font(.system(size: 21, weight: .bold)) // 系统原生字体
-                        .foregroundColor(netColor)
-                        .minimumScaleFactor(0.7)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 3)
+            // 左：今日（大标题）+ 总支出（小标题）两行；金额垂直居中于左区
+            VStack(alignment: .leading, spacing: 2) {
+                Text("今日")
+                    .font(.title3.weight(.semibold))
+                Text(netTitle)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                Text(money(abs(entry.todayNet)))
+                    .font(.system(size: 24, weight: .bold))
+                    .foregroundColor(netColor)
+                    .minimumScaleFactor(0.7)
+                    .lineLimit(1)
+                    .frame(maxHeight: .infinity, alignment: .center) // 金额垂直居中
                 HStack(spacing: 6) {
                     Text("支 \(money(entry.todayExpense))").foregroundColor(.red)
                     Text("收 \(money(entry.todayIncome))").foregroundColor(.green)
@@ -204,7 +205,7 @@ struct LedgerWidgetView: View {
     }
 
     private var largeView: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             // 今日汇总
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline) {
@@ -227,11 +228,13 @@ struct LedgerWidgetView: View {
                         .minimumScaleFactor(0.7)
                         .lineLimit(1)
                     Spacer(minLength: 4)
-                    Text("支 \(money(entry.todayExpense))  收 \(money(entry.todayIncome))")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.75)
+                    HStack(spacing: 6) {
+                        Text("支 \(money(entry.todayExpense))").foregroundColor(.red)
+                        Text("收 \(money(entry.todayIncome))").foregroundColor(.green)
+                    }
+                    .font(.caption2)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
                 }
             }
             Divider()
@@ -261,7 +264,7 @@ struct LedgerWidgetView: View {
                                 .foregroundColor(item.isExpense ? .red : .green)
                                 .lineLimit(1)
                         }
-                        .padding(.vertical, 2)
+                        .padding(.vertical, 1) // 压缩行距容纳 13 条
                         if item.id != entry.recentItems.last?.id {
                             Divider()
                         }
@@ -292,7 +295,9 @@ extension LedgerEntry {
             RecentItem(id: UUID(), name: "晚餐", amount: 45, isExpense: true, timeText: "11/18"),
             RecentItem(id: UUID(), name: "货款", amount: 200, isExpense: false, timeText: "11/17"),
             RecentItem(id: UUID(), name: "宵夜", amount: 32, isExpense: true, timeText: "11/16"),
-            RecentItem(id: UUID(), name: "信用卡", amount: 128, isExpense: true, timeText: "11/16")
+            RecentItem(id: UUID(), name: "信用卡", amount: 128, isExpense: true, timeText: "11/16"),
+            RecentItem(id: UUID(), name: "借呗", amount: 50, isExpense: true, timeText: "11/15"),
+            RecentItem(id: UUID(), name: "花呗", amount: 76, isExpense: true, timeText: "11/15")
         ]
         return LedgerEntry(date: now, todayExpense: 88.5, todayIncome: 170,
                            monthExpense: 770.17, monthIncome: 170,
