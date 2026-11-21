@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import WidgetKit
 
 final class DataStore: ObservableObject {
     @Published var categories: [Category]
@@ -9,17 +10,19 @@ final class DataStore: ObservableObject {
     private let fileURL: URL
 
     init() {
-        let documentDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSTemporaryDirectory())
-        fileURL = documentDir.appendingPathComponent("ledger_data.json")
+        // 写入统一落到共享容器（App Group 不可用则退回旧路径），保证小组件能读到同一份账本
+        fileURL = SharedStorage.sharedFileURL ?? SharedStorage.legacyFileURL
 
-        do {
-            let data = try Data(contentsOf: fileURL)
-            let decoded = try JSONDecoder().decode(AppData.self, from: data)
+        if let decoded = SharedStorage.load() {
             categories = decoded.categories
             paymentMethods = decoded.paymentMethods
             records = decoded.records
-        } catch {
+            // 若数据来自旧路径，立即迁移一份到共享容器（原子写，失败不影响原始数据）
+            if let shared = SharedStorage.sharedFileURL,
+               !FileManager.default.fileExists(atPath: shared.path) {
+                persist()
+            }
+        } else {
             // 首次启动或数据损坏时回退到预置数据，不向外泄露细节
             categories = Category.builtInExpense + Category.builtInIncome
             paymentMethods = PaymentMethod.builtIn
@@ -32,6 +35,8 @@ final class DataStore: ObservableObject {
         do {
             let encoded = try JSONEncoder().encode(snapshot)
             try encoded.write(to: fileURL, options: .atomic)
+            // 账本变化后请系统刷新桌面/负一屏小组件
+            WidgetCenter.shared.reloadAllTimelines()
         } catch {
             print("[快捷记账] 数据保存失败: \(error.localizedDescription)")
         }

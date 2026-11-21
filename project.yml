@@ -12,8 +12,15 @@ targets:
         excludes:
           - Info.plist
           - PrivacyInfo.xcprivacy
+          - LedgerApp.entitlements
     resources:
       - path: LedgerApp/PrivacyInfo.xcprivacy
+    entitlements:
+      path: LedgerApp/LedgerApp.entitlements
+      properties: {}
+    dependencies:
+      - target: LedgerWidget
+        embed: true
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: com.mazexin.Bookkeeping
       INFOPLIST_FILE: LedgerApp/Info.plist
@@ -24,3 +31,29 @@ targets:
       TARGETED_DEVICE_FAMILY: "1,2"
       SUPPORTED_PLATFORMS: iphoneos
       SWIFT_VERSION: "5.0"
+  LedgerWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: LedgerWidget
+        excludes:
+          - LedgerWidget.entitlements
+          - Info.plist
+          - PrivacyInfo.xcprivacy
+      - path: LedgerApp/Models.swift
+      - path: LedgerApp/SharedData.swift
+    resources:
+      - path: LedgerWidget/PrivacyInfo.xcprivacy
+    entitlements:
+      path: LedgerWidget/LedgerWidget.entitlements
+      properties: {}
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.mazexin.Bookkeeping.widget
+      INFOPLIST_FILE: LedgerWidget/Info.plist
+      CODE_SIGNING_ALLOWED: NO
+      CODE_SIGNING_REQUIRED: NO
+      CODE_SIGN_IDENTITY: ""
+      TARGETED_DEVICE_FAMILY: "1,2"
+      SUPPORTED_PLATFORMS: iphoneos
+      SWIFT_VERSION: "5.0"
+      SKIP_INSTALL: YES
