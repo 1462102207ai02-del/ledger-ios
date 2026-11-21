@@ -73,6 +73,7 @@ targets:
           - LedgerShare.entitlements
           - PrivacyInfo.xcprivacy
       - path: LedgerApp/SharedData.swift
+      - path: LedgerApp/Models.swift
     resources:
       - path: LedgerShare/PrivacyInfo.xcprivacy
     entitlements:
