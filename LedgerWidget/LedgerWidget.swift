@@ -62,7 +62,7 @@ struct LedgerProvider: TimelineProvider {
         let recent = data.records.max { $0.date < $1.date }
         let recentItems = data.records
             .sorted { $0.date > $1.date }
-            .prefix(9)
+            .prefix(11)
             .map { r in
                 RecentItem(id: r.id, name: r.categoryName, amount: r.amount,
                            isExpense: r.type == .expense, timeText: shortTime(r.date))
@@ -124,7 +124,7 @@ struct LedgerWidgetView: View {
             }
             Spacer(minLength: 2)
             Text(money(abs(entry.todayNet)))
-                .font(.system(size: 25, weight: .bold, design: .rounded))
+                .font(.system(size: 25, weight: .bold)) // 系统原生字体
                 .foregroundColor(netColor)
                 .minimumScaleFactor(0.7)
                 .lineLimit(1)
@@ -141,30 +141,33 @@ struct LedgerWidgetView: View {
 
     private var mediumView: some View {
         HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 6) {
+            // 左：今日
+            VStack(alignment: .leading) {
                 Text("今日").font(.caption2).foregroundColor(.secondary)
+                Spacer(minLength: 3)
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
                     Text(netTitle).font(.caption2).foregroundColor(.secondary)
                     Text(money(abs(entry.todayNet)))
-                        .font(.system(size: 21, weight: .bold, design: .rounded))
+                        .font(.system(size: 21, weight: .bold)) // 系统原生字体
                         .foregroundColor(netColor)
                         .minimumScaleFactor(0.7)
                         .lineLimit(1)
                 }
+                Spacer(minLength: 3)
                 HStack(spacing: 6) {
                     Text("支 \(money(entry.todayExpense))").foregroundColor(.red)
                     Text("收 \(money(entry.todayIncome))").foregroundColor(.green)
                 }
                 .font(.caption2)
                 .lineLimit(1)
-                Spacer(minLength: 0)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
 
             Divider()
 
-            VStack(alignment: .leading, spacing: 6) {
-                VStack(alignment: .leading, spacing: 2) {
+            // 右：最近一笔 + 本月
+            VStack(alignment: .leading) {
+                VStack(alignment: .leading, spacing: 3) {
                     HStack(alignment: .firstTextBaseline) {
                         Text("最近一笔").font(.caption2).foregroundColor(.secondary)
                         Spacer(minLength: 2)
@@ -177,30 +180,31 @@ struct LedgerWidgetView: View {
                             .font(.subheadline.weight(.semibold))
                             .lineLimit(1)
                         Text((entry.recentIsExpense ? "-" : "+") + money(entry.recentAmount))
-                            .font(.system(size: 16, weight: .semibold, design: .rounded))
+                            .font(.system(size: 16, weight: .semibold)) // 系统原生字体
                             .foregroundColor(entry.recentIsExpense ? .red : .green)
                             .lineLimit(1)
                     } else {
                         Text("暂无").font(.subheadline).foregroundColor(.secondary)
                     }
                 }
+                Spacer(minLength: 4)
                 Divider()
-                VStack(alignment: .leading, spacing: 2) {
+                Spacer(minLength: 4)
+                VStack(alignment: .leading, spacing: 3) {
                     Text("本月").font(.caption2).foregroundColor(.secondary)
                     Text("支出 \(money(entry.monthExpense))")
                         .font(.caption2).foregroundColor(.red)
                     Text("收入 \(money(entry.monthIncome))")
                         .font(.caption2).foregroundColor(.green)
                 }
-                Spacer(minLength: 0)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         }
         .padding()
     }
 
     private var largeView: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             // 今日汇总
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline) {
@@ -218,7 +222,7 @@ struct LedgerWidgetView: View {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(netTitle).font(.subheadline).foregroundColor(.secondary)
                     Text(money(abs(entry.todayNet)))
-                        .font(.system(size: 30, weight: .bold, design: .rounded))
+                        .font(.system(size: 30, weight: .bold)) // 系统原生字体
                         .foregroundColor(netColor)
                         .minimumScaleFactor(0.7)
                         .lineLimit(1)
@@ -246,18 +250,18 @@ struct LedgerWidgetView: View {
                     ForEach(entry.recentItems) { item in
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Text(item.name)
-                                .font(.subheadline)
+                                .font(.footnote) // 项目名缩小，金额字号不变
                                 .lineLimit(1)
                             Text(item.timeText)
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
                             Spacer(minLength: 4)
                             Text((item.isExpense ? "-" : "+") + money(item.amount))
-                                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                .font(.system(size: 14, weight: .semibold)) // 系统原生字体，大小不变
                                 .foregroundColor(item.isExpense ? .red : .green)
                                 .lineLimit(1)
                         }
-                        .padding(.vertical, 3)
+                        .padding(.vertical, 2)
                         if item.id != entry.recentItems.last?.id {
                             Divider()
                         }
@@ -286,7 +290,9 @@ extension LedgerEntry {
             RecentItem(id: UUID(), name: "超市", amount: 62.3, isExpense: true, timeText: "11/19"),
             RecentItem(id: UUID(), name: "饮料", amount: 6, isExpense: true, timeText: "11/18"),
             RecentItem(id: UUID(), name: "晚餐", amount: 45, isExpense: true, timeText: "11/18"),
-            RecentItem(id: UUID(), name: "货款", amount: 200, isExpense: false, timeText: "11/17")
+            RecentItem(id: UUID(), name: "货款", amount: 200, isExpense: false, timeText: "11/17"),
+            RecentItem(id: UUID(), name: "宵夜", amount: 32, isExpense: true, timeText: "11/16"),
+            RecentItem(id: UUID(), name: "信用卡", amount: 128, isExpense: true, timeText: "11/16")
         ]
         return LedgerEntry(date: now, todayExpense: 88.5, todayIncome: 170,
                            monthExpense: 770.17, monthIncome: 170,
