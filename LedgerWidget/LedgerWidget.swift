@@ -62,7 +62,7 @@ struct LedgerProvider: TimelineProvider {
         let recent = data.records.max { $0.date < $1.date }
         let recentItems = data.records
             .sorted { $0.date > $1.date }
-            .prefix(6)
+            .prefix(9)
             .map { r in
                 RecentItem(id: r.id, name: r.categoryName, amount: r.amount,
                            isExpense: r.type == .expense, timeText: shortTime(r.date))
@@ -122,6 +122,7 @@ struct LedgerWidgetView: View {
                 Text("今日").font(.caption).foregroundColor(.secondary)
                 Text(netTitle).font(.caption2).foregroundColor(.secondary)
             }
+            Spacer(minLength: 2)
             Text(money(abs(entry.todayNet)))
                 .font(.system(size: 25, weight: .bold, design: .rounded))
                 .foregroundColor(netColor)
@@ -140,17 +141,17 @@ struct LedgerWidgetView: View {
 
     private var mediumView: some View {
         HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("今日").font(.caption).foregroundColor(.secondary)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("今日").font(.caption2).foregroundColor(.secondary)
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
                     Text(netTitle).font(.caption2).foregroundColor(.secondary)
                     Text(money(abs(entry.todayNet)))
-                        .font(.system(size: 24, weight: .bold, design: .rounded))
+                        .font(.system(size: 21, weight: .bold, design: .rounded))
                         .foregroundColor(netColor)
                         .minimumScaleFactor(0.7)
                         .lineLimit(1)
                 }
-                HStack(spacing: 7) {
+                HStack(spacing: 6) {
                     Text("支 \(money(entry.todayExpense))").foregroundColor(.red)
                     Text("收 \(money(entry.todayIncome))").foregroundColor(.green)
                 }
@@ -186,12 +187,10 @@ struct LedgerWidgetView: View {
                 Divider()
                 VStack(alignment: .leading, spacing: 2) {
                     Text("本月").font(.caption2).foregroundColor(.secondary)
-                    HStack(spacing: 6) {
-                        Text("支 \(money(entry.monthExpense))").foregroundColor(.red)
-                        Text("收 \(money(entry.monthIncome))").foregroundColor(.green)
-                    }
-                    .font(.caption2)
-                    .lineLimit(1)
+                    Text("支出 \(money(entry.monthExpense))")
+                        .font(.caption2).foregroundColor(.red)
+                    Text("收入 \(money(entry.monthIncome))")
+                        .font(.caption2).foregroundColor(.green)
                 }
                 Spacer(minLength: 0)
             }
@@ -207,11 +206,14 @@ struct LedgerWidgetView: View {
                 HStack(alignment: .firstTextBaseline) {
                     Text("今日").font(.caption).foregroundColor(.secondary)
                     Spacer(minLength: 4)
-                    Text("本月  支 \(money(entry.monthExpense))   收 \(money(entry.monthIncome))")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.75)
+                    HStack(spacing: 6) {
+                        Text("本月").foregroundColor(.secondary)
+                        Text("支 \(money(entry.monthExpense))").foregroundColor(.red)
+                        Text("收 \(money(entry.monthIncome))").foregroundColor(.green)
+                    }
+                    .font(.caption2)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
                 }
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(netTitle).font(.subheadline).foregroundColor(.secondary)
@@ -242,20 +244,20 @@ struct LedgerWidgetView: View {
                     Spacer(minLength: 0)
                 } else {
                     ForEach(entry.recentItems) { item in
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Text(item.name)
                                 .font(.subheadline)
                                 .lineLimit(1)
-                            Spacer(minLength: 4)
                             Text(item.timeText)
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
+                            Spacer(minLength: 4)
                             Text((item.isExpense ? "-" : "+") + money(item.amount))
                                 .font(.system(size: 14, weight: .semibold, design: .rounded))
                                 .foregroundColor(item.isExpense ? .red : .green)
                                 .lineLimit(1)
                         }
-                        .padding(.vertical, 5)
+                        .padding(.vertical, 3)
                         if item.id != entry.recentItems.last?.id {
                             Divider()
                         }
@@ -281,7 +283,10 @@ extension LedgerEntry {
             RecentItem(id: UUID(), name: "工资", amount: 170, isExpense: false, timeText: "10:30"),
             RecentItem(id: UUID(), name: "早餐", amount: 8.5, isExpense: true, timeText: "昨天"),
             RecentItem(id: UUID(), name: "香烟", amount: 25, isExpense: true, timeText: "昨天"),
-            RecentItem(id: UUID(), name: "超市", amount: 62.3, isExpense: true, timeText: "11/19")
+            RecentItem(id: UUID(), name: "超市", amount: 62.3, isExpense: true, timeText: "11/19"),
+            RecentItem(id: UUID(), name: "饮料", amount: 6, isExpense: true, timeText: "11/18"),
+            RecentItem(id: UUID(), name: "晚餐", amount: 45, isExpense: true, timeText: "11/18"),
+            RecentItem(id: UUID(), name: "货款", amount: 200, isExpense: false, timeText: "11/17")
         ]
         return LedgerEntry(date: now, todayExpense: 88.5, todayIncome: 170,
                            monthExpense: 770.17, monthIncome: 170,
