@@ -116,7 +116,7 @@ struct OCRImportView: View {
     private func runOCR() {
         guard let img = image else { return }
         busy = true; message = ""
-        BaiduOCR.recognize(image: img) { result in
+        OCREngine.recognize(image: img) { result in
             busy = false
             switch result {
             case .failure(let e):

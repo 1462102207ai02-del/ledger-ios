@@ -4,12 +4,9 @@ import UIKit
 /// 百度智能云「通用文字识别（高精度版）」封装。
 /// 流程：API Key/Secret 换取 access_token → base64 图片 POST 到 accurate_basic → 解析文字行。
 enum BaiduOCR {
-    // 测试版内置凭证（仅用于本地尝鲜，正式版不会包含）
-    private static let apiKey = "JJFkaFv6Ze8lnmXJw6pSqzxe"
-    private static let secretKey = "mwQEg1IfUeNvlxcbhxvizVzdxbKPLAQm"
-
+    // 凭证与模型由用户在「设置 → OCR 识别」中填写，不再内置
     private static let tokenURL = "https://aip.baidubce.com/oauth/2.0/token"
-    private static let recognizeURL = "https://aip.baidubce.com/rest/2.0/ocr/v1/accurate_basic"
+    private static let recognizeBaseURL = "https://aip.baidubce.com/rest/2.0/ocr/v1/"
 
     struct OCRResult {
         let lines: [String]
@@ -48,8 +45,8 @@ enum BaiduOCR {
         var comps = URLComponents(string: tokenURL)!
         comps.queryItems = [
             URLQueryItem(name: "grant_type", value: "client_credentials"),
-            URLQueryItem(name: "client_id", value: apiKey),
-            URLQueryItem(name: "client_secret", value: secretKey)
+            URLQueryItem(name: "client_id", value: OCRConfig.apiKey),
+            URLQueryItem(name: "client_secret", value: OCRConfig.secretKey)
         ]
         var request = URLRequest(url: comps.url!)
         request.httpMethod = "POST"
@@ -67,7 +64,8 @@ enum BaiduOCR {
                                   _ completion: @escaping (Result<OCRResult, Error>) -> Void) {
         let base64 = data.base64EncodedString()
         let body = "image=" + base64.addingPercentEncoding(withAllowedCharacters: .alphanumerics)!
-        var request = URLRequest(url: URL(string: "\(recognizeURL)?access_token=\(token)")!)
+        let endpoint = recognizeBaseURL + OCRConfig.model
+        var request = URLRequest(url: URL(string: "\(endpoint)?access_token=\(token)")!)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         request.httpBody = body.data(using: .utf8)

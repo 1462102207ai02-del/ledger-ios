@@ -8,6 +8,12 @@ struct SettingsView: View {
     @State private var newPayment = ""
     @State private var showResetConfirm = false
 
+    // OCR 识别配置（key 与 OCRConfig 保持一致，实时双向同步）
+    @AppStorage("ocr.mode") private var ocrMode = "local"
+    @AppStorage("ocr.baidu.apiKey") private var baiduAPIKey = ""
+    @AppStorage("ocr.baidu.secretKey") private var baiduSecretKey = ""
+    @AppStorage("ocr.baidu.model") private var baiduModel = "accurate_basic"
+
     // 重命名弹窗状态
     @State private var renameTarget: RenameTarget?
     @State private var renameText = ""
@@ -35,6 +41,24 @@ struct SettingsView: View {
     var body: some View {
         NavigationView {
             Form {
+                Section(header: Text("OCR 识别"),
+                        footer: Text("本地识别离线免费、不上传截图；百度智能云需自行填写凭证，识别更准但会联网上传。")) {
+                    Picker("识别方式", selection: $ocrMode) {
+                        Text("本地识别").tag("local")
+                        Text("百度智能云").tag("baidu")
+                    }
+                    if ocrMode == "baidu" {
+                        TextField("API Key", text: $baiduAPIKey)
+                            .autocapitalization(.none).disableAutocorrection(true)
+                        TextField("Secret Key", text: $baiduSecretKey)
+                            .autocapitalization(.none).disableAutocorrection(true)
+                        TextField("OCR 模型", text: $baiduModel)
+                            .autocapitalization(.none).disableAutocorrection(true)
+                        Text("模型为百度接口名，默认 accurate_basic（通用高精度版）")
+                            .font(.caption).foregroundColor(.secondary)
+                    }
+                }
+
                 Section(header: Text("支出项目")) {
                     ForEach(store.categories.filter { $0.type == .expense }) { c in
                         Text(c.name)

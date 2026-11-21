@@ -25,7 +25,7 @@ enum ClipboardOCR {
         let text = pb.string
 
         if let image = image {
-            BaiduOCR.recognize(image: image) { result in
+            OCREngine.recognize(image: image) { result in
                 var d = Draft()
                 d.image = image
                 d.fromImage = true
@@ -37,7 +37,7 @@ enum ClipboardOCR {
                     d.fromImage = true
                     d.hadContent = true
                 case .failure(let err):
-                    d.errorMessage = "截图文字识别失败：\(err.localizedDescription)。下方原图可直接查看，请手动填写。"
+                    d.errorMessage = "文字识别失败（\(OCRConfig.mode == .local ? "本地" : "百度智能云")）：\(err.localizedDescription)。下方原图可直接查看，请手动填写。"
                 }
                 DispatchQueue.main.async { completion(d) }
             }
