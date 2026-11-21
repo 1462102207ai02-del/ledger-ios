@@ -1,16 +1,27 @@
 import Foundation
 
-/// 主 App 与小组件共享的数据通道。
-/// 两个 target 都会编译本文件，因此此处不依赖 UIKit / WidgetKit。
+/// 主 App、小组件、截图分享扩展共用的数据通道。
+/// 三个 target 都会编译本文件，因此此处不依赖 UIKit / WidgetKit。
 enum SharedStorage {
-    static let appGroupID = "group.com.mazexin.Bookkeeping"
+    static let appGroupID = "group.com.mazexin.Bookkeeping.test"
     private static let fileName = "ledger_data.json"
+    /// 分享扩展写入、主 App 读取的待识别截图
+    static let ocrImageName = "ocr_incoming.png"
+    /// 主 App 解析后、待用户确认的识别草稿
+    static let ocrDraftName = "ocr_draft.json"
 
     /// App Group 共享容器中的数据文件；App Group 不可用时返回 nil。
     static var sharedFileURL: URL? {
         FileManager.default
             .containerURL(forSecurityApplicationGroupIdentifier: appGroupID)?
             .appendingPathComponent(fileName)
+    }
+
+    /// 共享容器中任意文件的 URL（供截图/草稿跨扩展传递）。
+    static func sharedURL(for name: String) -> URL? {
+        FileManager.default
+            .containerURL(forSecurityApplicationGroupIdentifier: appGroupID)?
+            .appendingPathComponent(name)
     }
 
     /// 旧版本的数据位置（迁移兼容用）。

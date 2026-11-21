@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - ocr-test
 
 jobs:
   build:
@@ -46,15 +47,20 @@ jobs:
           cp LedgerApp/PrivacyInfo.xcprivacy "$APP_PATH/PrivacyInfo.xcprivacy"
           test -f "$APP_PATH/PrivacyInfo.xcprivacy" || { echo "::error::privacy manifest missing"; exit 1; }
 
-          # 校验 entitlements 文件确实含 App Group（xcodegen 生成后CHECK）
-          grep -q "group.com.mazexin.Bookkeeping" LedgerApp/LedgerApp.entitlements \
+          # 当前构建的 App Group（测试分支用 .test 后缀）
+          GROUP="group.com.mazexin.Bookkeeping.test"
+
+          # 校验 entitlements 文件确实含 App Group
+          grep -q "$GROUP" LedgerApp/LedgerApp.entitlements \
             || { echo "::error::App Group missing in app entitlements"; exit 1; }
-          grep -q "group.com.mazexin.Bookkeeping" LedgerWidget/LedgerWidget.entitlements \
+          grep -q "$GROUP" LedgerWidget/LedgerWidget.entitlements \
             || { echo "::error::App Group missing in widget entitlements"; exit 1; }
+          grep -q "$GROUP" LedgerShare/LedgerShare.entitlements \
+            || { echo "::error::App Group missing in share entitlements"; exit 1; }
 
           # 主 App 二进制注入 App Group 权限伪签名，并回读校验非空
           ldid -SLedgerApp/LedgerApp.entitlements "$APP_PATH/LedgerApp"
-          ldid -e "$APP_PATH/LedgerApp" | grep -q "group.com.mazexin.Bookkeeping" \
+          ldid -e "$APP_PATH/LedgerApp" | grep -q "$GROUP" \
             || { echo "::error::App Group not embedded in app signature"; exit 1; }
 
           # 校验小组件确实被嵌入，并同样注入 App Group 权限伪签名
@@ -62,20 +68,27 @@ jobs:
           test -d "$WIDGET_APP" || { echo "::error::widget appex not embedded"; exit 1; }
           cp LedgerWidget/PrivacyInfo.xcprivacy "$WIDGET_APP/PrivacyInfo.xcprivacy"
           ldid -SLedgerWidget/LedgerWidget.entitlements "$WIDGET_APP/LedgerWidget"
-          ldid -e "$WIDGET_APP/LedgerWidget" | grep -q "group.com.mazexin.Bookkeeping" \
+          ldid -e "$WIDGET_APP/LedgerWidget" | grep -q "$GROUP" \
             || { echo "::error::App Group not embedded in widget signature"; exit 1; }
+
+          # 分享扩展同样注入 App Group 权限伪签名
+          SHARE_APP="$APP_PATH/PlugIns/LedgerShare.appex"
+          test -d "$SHARE_APP" || { echo "::error::share appex not embedded"; exit 1; }
+          ldid -SLedgerShare/LedgerShare.entitlements "$SHARE_APP/LedgerShare"
+          ldid -e "$SHARE_APP/LedgerShare" | grep -q "$GROUP" \
+            || { echo "::error::App Group not embedded in share signature"; exit 1; }
 
           mkdir -p Payload
           cp -R "$APP_PATH" Payload/LedgerApp.app
-          zip -qry LedgerApp-TrollStore.ipa Payload
-          ls -lh LedgerApp-TrollStore.ipa
+          zip -qry LedgerAppTest-TrollStore.ipa Payload
+          ls -lh LedgerAppTest-TrollStore.ipa
           echo "=== IPA 内 PlugIns 内容 ==="
-          unzip -l LedgerApp-TrollStore.ipa | grep -i "PlugIns" || true
+          unzip -l LedgerAppTest-TrollStore.ipa | grep -i "PlugIns" || true
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: LedgerApp-TrollStore
-          path: LedgerApp-TrollStore.ipa
+          name: LedgerAppTest-TrollStore
+          path: LedgerAppTest-TrollStore.ipa
           if-no-files-found: error
           retention-days: 30

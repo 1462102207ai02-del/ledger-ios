@@ -19,12 +19,14 @@ targets:
       path: LedgerApp/LedgerApp.entitlements
       properties:
         com.apple.security.application-groups:
-          - group.com.mazexin.Bookkeeping
+          - group.com.mazexin.Bookkeeping.test
     dependencies:
       - target: LedgerWidget
         embed: true
+      - target: LedgerShare
+        embed: true
     settings:
-      PRODUCT_BUNDLE_IDENTIFIER: com.mazexin.Bookkeeping
+      PRODUCT_BUNDLE_IDENTIFIER: com.mazexin.Bookkeeping.test
       INFOPLIST_FILE: LedgerApp/Info.plist
       CODE_SIGNING_ALLOWED: NO
       CODE_SIGNING_REQUIRED: NO
@@ -50,10 +52,37 @@ targets:
       path: LedgerWidget/LedgerWidget.entitlements
       properties:
         com.apple.security.application-groups:
-          - group.com.mazexin.Bookkeeping
+          - group.com.mazexin.Bookkeeping.test
     settings:
-      PRODUCT_BUNDLE_IDENTIFIER: com.mazexin.Bookkeeping.widget
+      PRODUCT_BUNDLE_IDENTIFIER: com.mazexin.Bookkeeping.test.widget
       INFOPLIST_FILE: LedgerWidget/Info.plist
+      CODE_SIGNING_ALLOWED: NO
+      CODE_SIGNING_REQUIRED: NO
+      CODE_SIGN_IDENTITY: ""
+      TARGETED_DEVICE_FAMILY: "1,2"
+      SUPPORTED_PLATFORMS: iphoneos
+      SWIFT_VERSION: "5.0"
+      SKIP_INSTALL: YES
+  LedgerShare:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: LedgerShare
+        excludes:
+          - Info.plist
+          - LedgerShare.entitlements
+          - PrivacyInfo.xcprivacy
+      - path: LedgerApp/SharedData.swift
+    resources:
+      - path: LedgerShare/PrivacyInfo.xcprivacy
+    entitlements:
+      path: LedgerShare/LedgerShare.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.mazexin.Bookkeeping.test
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.mazexin.Bookkeeping.test.share
+      INFOPLIST_FILE: LedgerShare/Info.plist
       CODE_SIGNING_ALLOWED: NO
       CODE_SIGNING_REQUIRED: NO
       CODE_SIGN_IDENTITY: ""

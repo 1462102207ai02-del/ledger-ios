@@ -28,6 +28,19 @@ struct AddRecordView: View {
     var body: some View {
         NavigationView {
             Form {
+                Section {
+                    Button {
+                        NotificationCenter.default.post(name: .openOCR, object: nil)
+                    } label: {
+                        HStack {
+                            Image(systemName: "doc.text.viewfinder").foregroundColor(.accentColor)
+                            Text("截图识别记账").foregroundColor(.primary)
+                            Spacer()
+                            Image(systemName: "chevron.right").foregroundColor(.secondary)
+                                .imageScale(.small)
+                        }
+                    }
+                }
                 Section(header: Text("类型")) {
                     Picker("类型", selection: $type) {
                         ForEach(RecordType.allCases) { t in
@@ -132,12 +145,29 @@ struct AddRecordView: View {
     }
 
     private func setupDefaults() {
+        if let draft = loadDraft() {
+            // 来自截图识别的草稿：填入并可继续编辑，确认后由用户点保存
+            type = draft.isIncome ? .income : .expense
+            if !draft.category.isEmpty { categoryName = draft.category }
+            if !draft.payment.isEmpty { paymentName = draft.payment }
+            if !draft.amount.isEmpty { amountText = draft.amount }
+            if !draft.note.isEmpty { note = draft.note }
+        }
         if categoryName.isEmpty {
             categoryName = availableCategories.first?.name ?? ""
         }
         if paymentName.isEmpty {
             paymentName = store.paymentMethods.first?.name ?? ""
         }
+    }
+
+    /// 读取截图识别草稿，读后即删，避免重复填充。
+    private func loadDraft() -> OCRDraft? {
+        guard let url = SharedStorage.sharedURL(for: SharedStorage.ocrDraftName),
+              let data = try? Data(contentsOf: url),
+              let draft = try? JSONDecoder().decode(OCRDraft.self, from: data) else { return nil }
+        try? FileManager.default.removeItem(at: url)
+        return draft
     }
 
     private func save() {

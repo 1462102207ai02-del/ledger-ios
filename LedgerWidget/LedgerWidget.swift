@@ -320,7 +320,7 @@ struct LedgerWidget: Widget {
         StaticConfiguration(kind: kind, provider: LedgerProvider()) { entry in
             LedgerWidgetView(entry: entry)
         }
-        .configurationDisplayName("快捷记账")
+        .configurationDisplayName("快捷记账·测试")
         .description("今日收支、最近记录与本月累计")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
     }

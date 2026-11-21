@@ -9,7 +9,7 @@
 		<string>zh_CN</string>
 	</array>
 	<key>CFBundleDisplayName</key>
-	<string>快捷记账</string>
+	<string>快捷记账·测试</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -36,5 +36,38 @@
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
 	</array>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.mazexin.Bookkeeping.test.ocr</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>ledgerocr</string>
+			</array>
+		</dict>
+	</array>
+	<key>UIApplicationShortcutItems</key>
+	<array>
+		<dict>
+			<key>UIApplicationShortcutItemType</key>
+			<string>com.mazexin.Bookkeeping.test.scan</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>截图识别记账</string>
+			<key>UIApplicationShortcutItemSubtitle</key>
+			<string>选一张支付截图</string>
+			<key>UIApplicationShortcutItemIconType</key>
+			<string>UIApplicationShortcutIconTypeCapturePhoto</string>
+		</dict>
+	</array>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>选择支付截图进行 OCR 识别记账</string>
+	<key>NSCameraUsageDescription</key>
+	<string>拍摄支付截图进行 OCR 识别记账</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
 </dict>
 </plist>
