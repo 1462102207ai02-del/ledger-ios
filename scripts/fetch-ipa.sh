@@ -75,13 +75,28 @@ trap 'rm -rf "$TMP"' EXIT
 curl -sL --max-time 180 "${HDR[@]}" -o "$TMP/artifact.zip" "$API/actions/artifacts/$ART_ID/zip"
 unzip -qo "$TMP/artifact.zip" -d "$TMP/out"
 
-IPA="$(find "$TMP/out" -name '*.ipa' -type f | head -1)"
-if [ -z "$IPA" ]; then
+TROLL_IPA="$(find "$TMP/out" -name 'LedgerApp-TrollStore.ipa' -type f | head -1)"
+SIDELOAD_IPA="$(find "$TMP/out" -name 'LedgerApp-Sideload.ipa' -type f | head -1)"
+
+# 兼容旧构建：没有区分产物名时，取第一个 ipa 当 TrollStore 版
+if [ -z "$TROLL_IPA" ] && [ -z "$SIDELOAD_IPA" ]; then
+  TROLL_IPA="$(find "$TMP/out" -name '*.ipa' -type f | head -1)"
+fi
+if [ -z "$TROLL_IPA" ] && [ -z "$SIDELOAD_IPA" ]; then
   echo "❌ 解压后未找到 ipa 文件。"
   exit 1
 fi
 
-TARGET="$DESKTOP/快捷记账.ipa"
-cp "$IPA" "$TARGET"
-echo "✅ 已放到桌面：$TARGET"
-ls -lh "$TARGET" | awk '{print "    大小: "$5}'
+if [ -n "$TROLL_IPA" ]; then
+  TARGET="$DESKTOP/快捷记账.ipa"
+  cp "$TROLL_IPA" "$TARGET"
+  echo "✅ TrollStore 版已放到桌面：$TARGET"
+  ls -lh "$TARGET" | awk '{print "    大小: "$5}'
+fi
+
+if [ -n "$SIDELOAD_IPA" ]; then
+  SIDE_TARGET="$DESKTOP/快捷记账-自签版.ipa"
+  cp "$SIDELOAD_IPA" "$SIDE_TARGET"
+  echo "✅ 真证书自签裸包已放到桌面：$SIDE_TARGET"
+  ls -lh "$SIDE_TARGET" | awk '{print "    大小: "$5}'
+fi
