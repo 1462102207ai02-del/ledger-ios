@@ -60,6 +60,20 @@ jobs:
           echo "=== 自签裸包内 PlugIns（应为空）==="
           unzip -l LedgerApp-Sideload.ipa | grep -i "PlugIns" || echo "  (无扩展)"
 
+          # ===== 产物 1.5：真证书自签带组件版（LCSign 用）=====
+          # 与裸包的唯一差异：保留 widget 扩展（PlugIns）。
+          # 同样不做 ldid 伪签——伪签里的野生 App Group entitlement 会跟真证书/profile 冲突，
+          # 这是之前安装失败的主因。App Group 权限改由用户导入 LCSign 的 provisioning profile 决定：
+          #   - profile 含 group.com.mazexin.Bookkeeping → 装上后小组件可读到数据
+          #   - profile 不含该 group → 小组件会出现但显示空数据
+          rm -rf Payload && mkdir -p Payload
+          cp -R "$APP_PATH" Payload/LedgerApp.app
+          find Payload/LedgerApp.app -type d -name "_CodeSignature" -exec rm -rf {} + 2>/dev/null || true
+          zip -qry LedgerApp-SideloadWidget.ipa Payload
+          ls -lh LedgerApp-SideloadWidget.ipa
+          echo "=== 自签带组件版内 PlugIns（应含 LedgerWidget.appex）==="
+          unzip -l LedgerApp-SideloadWidget.ipa | grep -i "PlugIns" || echo "  (无扩展，异常)"
+
           # ===== 产物 2：TrollStore 版（ldid 伪签 + App Group，小组件可用）=====
           cp LedgerApp/PrivacyInfo.xcprivacy "$APP_PATH/PrivacyInfo.xcprivacy"
           WIDGET_APP="$APP_PATH/PlugIns/LedgerWidget.appex"
@@ -94,5 +108,6 @@ jobs:
           path: |
             LedgerApp-TrollStore.ipa
             LedgerApp-Sideload.ipa
+            LedgerApp-SideloadWidget.ipa
           if-no-files-found: error
           retention-days: 30
