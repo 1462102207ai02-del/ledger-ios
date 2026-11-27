@@ -3,13 +3,21 @@ import Foundation
 /// 主 App 与小组件共享的数据通道。
 /// 两个 target 都会编译本文件，因此此处只依赖 Foundation。
 enum SharedStorage {
-    static let appGroupID = "group.com.mazexin.Bookkeeping"
+    /// 旧包 / 无描述文件时的回退值。注意：这个值不再写入二进制签名。
+    static let legacyAppGroupID = "group.com.mazexin.Bookkeeping"
+
+    /// 运行时优先读取重签 profile 实际授权的 App Group。
+    /// 签名里保持干净（不含受限 entitlement），因此这里必须能适配任意 group 名。
+    static var resolvedAppGroupID: String {
+        EmbeddedProfile.appGroupID ?? legacyAppGroupID
+    }
+
     private static let fileName = "ledger_data.json"
 
     /// App Group 共享容器中的数据文件；App Group 不可用时返回 nil。
     static var sharedFileURL: URL? {
         FileManager.default
-            .containerURL(forSecurityApplicationGroupIdentifier: appGroupID)?
+            .containerURL(forSecurityApplicationGroupIdentifier: resolvedAppGroupID)?
             .appendingPathComponent(fileName)
     }
 

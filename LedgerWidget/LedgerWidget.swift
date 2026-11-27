@@ -2,15 +2,6 @@ import WidgetKit
 import SwiftUI
 import Foundation
 
-// MARK: - 最近记录条目
-struct RecentItem: Identifiable {
-    let id: UUID
-    let name: String
-    let amount: Double
-    let isExpense: Bool
-    let timeText: String
-}
-
 // MARK: - 时间线数据
 struct LedgerEntry: TimelineEntry {
     let date: Date
@@ -49,47 +40,28 @@ struct LedgerProvider: TimelineProvider {
     }
 
     private func loadEntry() -> LedgerEntry {
-        guard let data = SharedStorage.load() else {
-            return LedgerEntry(date: Date(), todayExpense: 0, todayIncome: 0,
-                               monthExpense: 0, monthIncome: 0, recentItems: [])
-        }
-        let cal = Calendar.current
         let now = Date()
-        let today = data.records.filter { cal.isDateInToday($0.date) }
-        let month = data.records.filter { cal.isDate($0.date, equalTo: now, toGranularity: .month) }
-        // 求和走 Decimal，避免大量小额累加后的浮点误差。
-        let sum = { (items: [Transaction], type: RecordType) -> Double in
-            Money.double(Money.sum(items, type: type))
+        // 通道 1：共享容器里的完整账本（App Group 可用时优先，数据最完整）。
+        if let data = SharedStorage.load() {
+            return entry(from: data, now: now)
         }
-        let recentItems = data.records
-            .sorted { $0.date > $1.date }
-            .prefix(13)
-            .map { r in
-                RecentItem(id: r.id, name: r.categoryName, amount: r.amount,
-                           isExpense: r.type == .expense, timeText: shortTime(r.date))
-            }
-        return LedgerEntry(
-            date: now,
-            todayExpense: sum(today, .expense),
-            todayIncome: sum(today, .income),
-            monthExpense: sum(month, .expense),
-            monthIncome: sum(month, .income),
-            recentItems: recentItems
-        )
+        // 通道 2：主 App 写入的 Keychain 快照。
+        // 剪贴板在 iOS 后台不可读（Apple 明确策略），所以兜底不能用 UIPasteboard。
+        if let snapshot = WidgetBridge.read() {
+            return entry(from: snapshot.data, now: now)
+        }
+        return LedgerEntry(date: now, todayExpense: 0, todayIncome: 0,
+                           monthExpense: 0, monthIncome: 0, recentItems: [])
     }
 
-    private func shortTime(_ date: Date) -> String {
-        let cal = Calendar.current
-        let fmt = DateFormatter()
-        fmt.locale = Locale(identifier: "zh_CN")
-        if cal.isDateInToday(date) {
-            fmt.dateFormat = "HH:mm"
-            return fmt.string(from: date)
-        } else if cal.isDateInYesterday(date) {
-            return "昨天"
-        }
-        fmt.dateFormat = "M/d"
-        return fmt.string(from: date)
+    private func entry(from data: AppData, now: Date) -> LedgerEntry {
+        let s = WidgetSnapshotBuilder.summary(from: data, now: now)
+        return LedgerEntry(date: now,
+                           todayExpense: s.todayExpense,
+                           todayIncome: s.todayIncome,
+                           monthExpense: s.monthExpense,
+                           monthIncome: s.monthIncome,
+                           recentItems: s.recentItems)
     }
 }
 

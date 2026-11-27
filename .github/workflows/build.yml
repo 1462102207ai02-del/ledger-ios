@@ -38,7 +38,10 @@ jobs:
       # 只产出一个通用 IPA：TrollStore 直装与真证书工具重签共用同一份包。
       # 关键前提：
       #  - PlugIns/LedgerWidget.appex 必须保留，小组件才存在（与证书无关）
-      #  - ldid ad-hoc 伪签写入 App Group，TrollStore 靠 CoreTrust 直接信任该签名
+      #  - 二进制签名必须「干净」：不写入任何受限 entitlement。
+      #    旧版把 com.apple.security.application-groups 用 ldid 硬写进签名，
+      #    p12 重签时 profile 不带同名 App Group，安装校验会直接失败。
+      #    小组件数据改由「运行时动态发现的 App Group / Keychain 快照」传递。
       #  - 真证书工具重签时会覆盖签名，但不会删插件 / 改代码，装的仍是这个包
       - name: Sign and package universal IPA
         run: |
@@ -61,20 +64,20 @@ jobs:
           # 未签名编译不应残留签名目录，清掉后统一由 ldid 生成 ad-hoc 签名
           find "$APP_PATH" -type d -name "_CodeSignature" -exec rm -rf {} + 2>/dev/null || true
 
-          GROUP="group.com.mazexin.Bookkeeping"
-          grep -q "$GROUP" LedgerApp/LedgerApp.entitlements \
-            || { echo "::error::App Group missing in app entitlements"; exit 1; }
-          grep -q "$GROUP" LedgerWidget/LedgerWidget.entitlements \
-            || { echo "::error::App Group missing in widget entitlements"; exit 1; }
+          # 唯一一次签名：纯 ad-hoc 签名，不附带任何 entitlement 文件。
+          # 重签工具会基于自己的 profile 生成 entitlements，这里留白才不会冲突。
+          ldid -S "$APP_PATH/LedgerApp"
+          ldid -S "$WIDGET_APP/LedgerWidget"
 
-          # 唯一一次签名：主 App 与小组件都写入带 App Group 的 ad-hoc 签名
-          ldid -SLedgerApp/LedgerApp.entitlements "$APP_PATH/LedgerApp"
-          ldid -e "$APP_PATH/LedgerApp" | grep -q "$GROUP" \
-            || { echo "::error::App Group not embedded in app signature"; exit 1; }
-
-          ldid -SLedgerWidget/LedgerWidget.entitlements "$WIDGET_APP/LedgerWidget"
-          ldid -e "$WIDGET_APP/LedgerWidget" | grep -q "$GROUP" \
-            || { echo "::error::App Group not embedded in widget signature"; exit 1; }
+          # 硬校验：两个可执行文件的签名里都不能残留受限 App Group。
+          for bin in "$APP_PATH/LedgerApp" "$WIDGET_APP/LedgerWidget"; do
+            ENT="$(ldid -e "$bin" 2>/dev/null || true)"
+            if printf '%s' "$ENT" | grep -q "com.apple.security.application-groups"; then
+              echo "::error::restricted App Group entitlement found in $bin"
+              exit 1
+            fi
+          done
+          echo "签名核对：主 App 与小组件均不含受限 entitlement"
 
           rm -rf Payload && mkdir -p Payload
           cp -R "$APP_PATH" Payload/LedgerApp.app

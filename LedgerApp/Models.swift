@@ -168,3 +168,12 @@ struct AppData: Codable {
         records = try c.decodeIfPresent([Transaction].self, forKey: .records) ?? []
     }
 }
+
+// MARK: - 小组件最近记录（主 App 与 Widget 共用）
+struct RecentItem: Identifiable, Hashable {
+    let id: UUID
+    let name: String
+    let amount: Double
+    let isExpense: Bool
+    let timeText: String
+}

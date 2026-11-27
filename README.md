@@ -1,7 +1,7 @@
 # 记账 · 个人账本
 
 一个只服务于一人的 iOS 记账 App，SwiftUI 原生开发，数据全部存本机，不联网、不上传。
-Bundle ID：`com.mazexin.Bookkeeping`，App Group：`group.com.mazexin.Bookkeeping`。
+Bundle ID：`com.mazexin.Bookkeeping`。签名保持干净，不含任何受限 entitlement；App Group 改为运行时动态发现。
 
 ## 功能
 
@@ -24,7 +24,7 @@ Bundle ID：`com.mazexin.Bookkeeping`，App Group：`group.com.mazexin.Bookkeepi
 
 ## 数据
 
-数据以 JSON 存于 App Group 共享容器的 `ledger_data.json`（小组件与主 App 共用）；若 App Group 不可用，自动回退到 App 沙盒 `Documents/`。
+数据以 JSON 存于 `ledger_data.json`：优先写运行时发现的 App Group 共享容器（主 App 与小组件共用），不可用时回退到主 App 沙盒 `Documents/`。小组件还有一条独立的 Keychain 快照通道，见「只出一个包，两种装法都支持全部功能」。
 
 - 所有写入为原子写，金额求和统一走 `Decimal`，避免 `Double` 累加误差。
 - `schemaVersion` 用于兼容旧账本；旧文件会自动补写版本字段，旧路径数据会自动迁移到共享容器。
@@ -46,18 +46,39 @@ Bundle ID：`com.mazexin.Bookkeeping`，App Group：`group.com.mazexin.Bookkeepi
 
 ### 只出一个包，两种装法都支持全部功能
 
-早期版本按「签名方式」拆成三个包，其实三个包是同一份 `LedgerApp.app`，差异只在要不要 `ldid` 伪签、要不要删 `PlugIns`。这既没必要，还会让自签版丢掉小组件。现在合并为单一通用包：
+早期版本按「签名方式」拆成三个包，后来合并为单一通用包。当前版本进一步把**签名与权限解耦**：主 App 与小组件都只做纯 `ldid -S` ad-hoc 签名，**不写入任何受限 entitlement**。
 
-- **保留 `PlugIns/LedgerWidget.appex`**：小组件扩展一定在包里，桌面能添加、能点击直达「记一笔」。这与用哪种证书无关。
-- **主 App 与小组件都做 `ldid -S` 伪签并写入 App Group**：TrollStore 靠 CoreTrust 直接信任这个 ad-hoc 签名，权限随签名生效，小组件立刻能读到账本，不需要开发者账号或描述文件。
-- **真证书工具（LCSign / 爱思 / AltStore / Sideloadly）重签同一份 IPA**：重签会覆盖签名，但不会删插件、不会改代码，所以装的仍是这个包，功能完全一致。小组件能否读到账本取决于 `com.apple.security.application-groups` 是否被重签所用的 provisioning profile 授权——App Group 在 iOS 上属于受限权限，且 App Group ID 全局唯一、只属于注册它的那个开发者团队，用其他 p12 证书签名时 profile 通常不会带上它，于是共享容器返回 nil、小组件显示空数据。这与打包无关，也不是「有没有开发者账号」的问题。
+### 为什么 p12 自签以前装不上
+
+`com.apple.security.application-groups` 属于受限 entitlement。旧版把它硬写进两个可执行文件的签名里，而你的 p12 / provisioning profile 不会带 `group.com.mazexin.Bookkeeping`（App Group ID 全局唯一、只属于注册它的开发者团队）。重签工具若继承原 entitlements，安装校验就会因「entitlement 未被 profile 授权」失败——这是最典型的自签安装失败原因。现在签名里已经彻底没有这个键。
+
+### 小组件数据怎么传（不再硬依赖 App Group）
+
+| 优先级 | 通道 | 生效条件 | 说明 |
+| --- | --- | --- | --- |
+| 1 | App Group 共享容器 | 重签 profile / 工具注入了任意 App Group | App Group ID **运行时从 `embedded.mobileprovision` 动态解析**，不再写死；主 App 与小组件用同一个值，数据最完整 |
+| 2 | Keychain 快照 | profile 带 `keychain-access-groups`（多数自签 profile 默认带） | 主 App 每次保存账本或冷启动时写一份精简快照，小组件读不到共享容器时读它 |
+| 3 | 空态 | 以上都不可用 | 小组件显示空数据，点它可直达「记一笔」 |
+
+补充两点实证约束，避免再走弯路：
+
+- **不用剪贴板兜底**：Apple 明确「后台无法读取剪贴板」是策略限制，而 Widget 的 TimelineProvider 正是后台进程；且命名剪贴板自 iOS 10 起非持久化、只在创建它的进程内可用。所以 `UIPasteboard` 方案在真机上必然失效。
+- **快照按当前日期重算**：快照里存的是精简后的账目记录（最近 150 条），今日 / 本月汇总由小组件按刷新当天重新计算，跨 0 点不会显示昨天的数字。
 
 | 安装方式 | 签名 | 主 App 功能 | 小组件 |
 | --- | --- | --- | --- |
-| TrollStore / TrollFools | 包内 `ldid` 伪签（已带 App Group） | 全部 | 有，且能读到账本 |
-| 真证书自签 | 工具重签覆盖 | 全部（同一份代码） | 有，读数据取决于 profile 是否带 App Group |
+| TrollStore / TrollFools | 包内纯净 ad-hoc 签名 | 全部 | 有；共享容器 / Keychain 任一可用即完整显示 |
+| 真证书自签 | 工具重签覆盖 | 全部（同一份代码） | 有；不再因受限 entitlement 安装失败 |
 
-构建流程：XcodeGen 生成工程 → xcodebuild 编译未签名 app → 一次 `ldid -S` 对主 App 与 widget 伪签 → 打包成单个 IPA → 上传 artifact。取包也可直接跑 `bash scripts/fetch-ipa.sh [commit短sha]`，会把通用版放到桌面 `快捷记账.ipa`。
+### p12 自签安装与验证清单
+
+1. 用**支持 `PlugIns` appex 重签**的工具（ESign / Feather / Sideloadly / AltStore 等）。若工具会跳过插件，小组件自然不会出现。
+2. profile 的 App ID 需能覆盖 `com.mazexin.Bookkeeping.widget`；用通配符 App ID，或让工具自动改写 appex 的 Bundle ID。Bundle ID 与 profile 不匹配是另一类常见安装失败。
+3. 若工具支持自定义 entitlements，可给主 App 与 widget **注入同一个 App Group**（名字任意），App 会自动识别并使用，小组件数据最完整。
+4. 装好后**先打开一次主 App**，让 Keychain 快照写入；再添加 / 刷新小组件。
+5. 若仍安装失败，请记录工具名称与具体报错（`0xE8008015` / `ApplicationVerificationFailed` / entitlements 相关字样等），据此继续定位——这类信息与打包无关，需要真机日志才能定性。
+
+构建流程：XcodeGen 生成工程 → xcodebuild 编译未签名 app → 一次 `ldid -S` 对主 App 与 widget 做纯净 ad-hoc 签名 → CI 校验签名里不含 `com.apple.security.application-groups` → 打包成单个 IPA → 上传 artifact。取包也可直接跑 `bash scripts/fetch-ipa.sh [commit短sha]`，会把通用版放到桌面 `快捷记账.ipa`。
 
 ## 修改内置项目
 

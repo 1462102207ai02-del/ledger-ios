@@ -20,6 +20,7 @@ final class DataStore: ObservableObject {
         records = []
         dataWarning = nil
 
+        var canPushSnapshot = true
         switch SharedStorage.loadResult() {
         case .success(let decoded):
             categories = decoded.categories
@@ -42,10 +43,15 @@ final class DataStore: ObservableObject {
             // 关键：先留底再回退。旧版本在这里直接清空，等于把账本弄丢。
             SharedStorage.backupCorruptFile(at: url)
             dataWarning = "账本文件无法读取，已自动备份原文件。当前是空白账本，请到「设置 → 导入账本」恢复备份后再继续记账。"
+            // 不覆盖上一次的快照，避免小组件在用户恢复数据前被刷成空白。
+            canPushSnapshot = false
 
         case .empty:
             break
         }
+
+        // 冷启动也推一份快照：用户还没记过账时，小组件同样有可用数据。
+        if canPushSnapshot { pushWidgetSnapshot() }
     }
 
     var dataFileDescription: String {
@@ -59,12 +65,21 @@ final class DataStore: ObservableObject {
         do {
             try SharedStorage.write(snapshot)
             dataWarning = nil
+            // 共享容器之外再推一份 Keychain 快照：没有 App Group 时小组件靠它显示数据。
+            pushWidgetSnapshot(from: snapshot)
             // 账本变化后请系统刷新桌面/负一屏小组件
             WidgetCenter.shared.reloadAllTimelines()
         } catch {
             print("[快捷记账] 数据保存失败: \(error.localizedDescription)")
             dataWarning = "账本保存失败：\(error.localizedDescription)"
         }
+    }
+
+    private func pushWidgetSnapshot(from snapshot: AppData? = nil) {
+        let source = snapshot ?? AppData(categories: categories,
+                                         paymentMethods: paymentMethods,
+                                         records: records)
+        WidgetBridge.write(WidgetSnapshotBuilder.make(from: source))
     }
 
     // MARK: 记录
