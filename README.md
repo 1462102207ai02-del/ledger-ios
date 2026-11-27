@@ -1,13 +1,17 @@
 # 记账 · 个人账本
 
 一个只服务于一人的 iOS 记账 App，SwiftUI 原生开发，数据全部存本机，不联网、不上传。
+Bundle ID：`com.mazexin.Bookkeeping`，App Group：`group.com.mazexin.Bookkeeping`。
 
 ## 功能
 
-- **记一笔**：支出 / 收入、项目、金额、支付方式、日期时间、备注
-- **明细**：按时间倒序流水，左滑删除
-- **统计**：本月支出 / 收入 / 结余，按项目、按支付方式的支出排行
-- **设置**：增删改支出项目、收入项目、支付方式；一键恢复预置
+- **记一笔**：支出 / 收入、项目、金额、支付方式、日期时间（精确到分）、备注
+  - 项目与支付方式改为**点按弹出平铺网格**选择，带 emoji 图标与搜索，项目再多也不用拉长列表
+  - 保存后保留项目与支付方式，键盘回到金额，方便连续记账
+- **明细**：按日分组的倒序流水；可切换「全部记录 / 按日期」查看某一天；点击任意一笔进入**编辑**，可改类型、项目、金额、支付方式、时间、备注；左滑删除
+- **统计**：可切换月份；本月支出 / 收入 / 结余；**本月每日支出**与**近 6 个月支出**趋势图（纯 SwiftUI 自绘，不依赖 iOS 16 Charts）；按项目、按支付方式的支出排行
+- **小组件**：小 / 中 / 大三种尺寸，点击任意位置直达「记一笔」并自动聚焦金额；跨 0 点准时刷新「今日」数据
+- **设置**：增删改支出项目、收入项目、支付方式；重命名会同步更新历史账目；一键恢复预置；**导出 / 导入账本 JSON**
 
 ## 预置项目
 
@@ -15,11 +19,21 @@
 - 收入：工资、货款
 - 支付方式：微信、支付宝、银行卡、现金
 
-以上全部可在「设置」中自行增删改。记过的账以文字保存，删除项目不会丢失历史记录。
+以上全部可在「设置」中自行增删改。记过的账以文字保存，删除项目不会丢失历史记录。支出与收入各自独立查重，允许同名项目。
 
 ## 数据
 
-数据以 JSON 存于 App 沙盒的 `Documents/ledger_data.json`。**卸载 App 数据会消失**，目前无导出功能（按需求未做备份）。
+数据以 JSON 存于 App Group 共享容器的 `ledger_data.json`（小组件与主 App 共用）；若 App Group 不可用，自动回退到 App 沙盒 `Documents/`。
+
+- 所有写入为原子写，金额求和统一走 `Decimal`，避免 `Double` 累加误差。
+- `schemaVersion` 用于兼容旧账本；旧文件会自动补写版本字段，旧路径数据会自动迁移到共享容器。
+- **文件损坏时不会静默清空**：先把原文件另存为 `ledger_data.corrupt-<时间戳>.json`，再显示空白账本并在「设置」里告警。
+- 「设置 → 导出账本 JSON」可通过系统分享面板存到「文件」等位置；「导入账本 JSON」会整体替换当前账本，覆盖前自动留一份 `ledger_data.backup-<时间戳>.json`。
+- **卸载 App 仍会带走沙盒数据，请定期导出备份。**
+
+## 快速记一笔
+
+小组件通过 `ledger://add` 唤起主 App（URL Scheme 注册在 `LedgerApp/Info.plist`），主 App 切到「记一笔」并自动聚焦金额输入框。
 
 ## 如何构建 IPA
 
@@ -27,9 +41,15 @@
 
 1. 每次 `git push` 到 `main` 分支会自动触发构建；也可在仓库 Actions 页手动点 **Run workflow**。
 2. 构建完成后，进入该次运行的页面，在底部 **Artifacts** 区下载 `LedgerApp-TrollStore`（一个 zip）。
-3. 解压得到 `LedgerApp-TrollStore.ipa`，用 TrollStore 安装。
+3. 解压后得到三个 IPA：
 
-构建流程：XcodeGen 生成工程 → xcodebuild 编译未签名 app → `ldid -S` 伪签名 → 打包 ipa。伪签名正是 TrollStore 所需要的形式，无需开发者账号。
+| 产物 | 用途 |
+| --- | --- |
+| `LedgerApp-TrollStore.ipa` | **主推**：`ldid` 伪签 + App Group，小组件可正常读到账本，用 TrollStore 安装 |
+| `LedgerApp-SideloadWidget.ipa` | 真证书自签、保留 widget，供 LCSign 等带 App Group profile 的场景 |
+| `LedgerApp-Sideload.ipa` | 真证书自签、去掉 widget，兼容性最好但小组件显示空数据 |
+
+构建流程：XcodeGen 生成工程 → xcodebuild 编译未签名 app → 分别打包 → `ldid -S` 伪签（仅 TrollStore 版）→ 上传 artifact。伪签名正是 TrollStore 所需要的形式，无需开发者账号。
 
 ## 修改内置项目
 

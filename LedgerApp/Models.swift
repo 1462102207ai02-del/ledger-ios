@@ -69,6 +69,8 @@ struct PaymentMethod: Codable, Identifiable, Hashable {
 }
 
 // MARK: - 一笔账
+/// amount 保留 Double 存储，与历史账本 JSON 完全兼容；
+/// 所有求和与展示统一走 Money 的 Decimal 通道，避免浮点累加误差。
 struct Transaction: Codable, Identifiable, Hashable {
     var id: UUID
     var type: RecordType
@@ -90,9 +92,76 @@ struct Transaction: Codable, Identifiable, Hashable {
     }
 }
 
+// MARK: - 金额工具（纯 Foundation，主 App 与 Widget 共用）
+enum Money {
+    static func decimal(_ value: Double) -> Decimal {
+        Decimal(string: String(format: "%.2f", value)) ?? Decimal(0)
+    }
+
+    static func sum(_ values: [Double]) -> Decimal {
+        values.reduce(Decimal(0)) { $0 + decimal($1) }
+    }
+
+    static func sum(_ records: [Transaction], type: RecordType) -> Decimal {
+        sum(records.filter { $0.type == type }.map { $0.amount })
+    }
+
+    static func double(_ value: Decimal) -> Double {
+        NSDecimalNumber(decimal: value).doubleValue
+    }
+
+    static func string(_ value: Decimal, decimals: Int = 2) -> String {
+        let number = NSDecimalNumber(decimal: value)
+        let isNegative = number.compare(NSDecimalNumber(string: "0")) == .orderedAscending
+        // 用十进制乘法取绝对值，不经过 Double，保持精确。
+        let shown: NSNumber = isNegative
+            ? number.multiplying(by: NSDecimalNumber(string: "-1"))
+            : number
+
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.minimumFractionDigits = decimals
+        formatter.maximumFractionDigits = decimals
+        formatter.usesGroupingSeparator = true
+        formatter.locale = Locale(identifier: "zh_CN")
+        let text = formatter.string(from: shown) ?? "0.00"
+        return (isNegative ? "-¥" : "¥") + text
+    }
+
+    static func string(_ value: Double, decimals: Int = 2) -> String {
+        string(decimal(value), decimals: decimals)
+    }
+}
+
 // MARK: - 整体持久化结构
 struct AppData: Codable {
+    static let currentSchemaVersion = 1
+
+    var schemaVersion: Int
     var categories: [Category]
     var paymentMethods: [PaymentMethod]
     var records: [Transaction]
+
+    init(schemaVersion: Int = AppData.currentSchemaVersion,
+         categories: [Category],
+         paymentMethods: [PaymentMethod],
+         records: [Transaction]) {
+        self.schemaVersion = schemaVersion
+        self.categories = categories
+        self.paymentMethods = paymentMethods
+        self.records = records
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion, categories, paymentMethods, records
+    }
+
+    /// 兼容旧账本：缺 schemaVersion 视为 0，缺任一数组视为空。
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try c.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 0
+        categories = try c.decodeIfPresent([Category].self, forKey: .categories) ?? []
+        paymentMethods = try c.decodeIfPresent([PaymentMethod].self, forKey: .paymentMethods) ?? []
+        records = try c.decodeIfPresent([Transaction].self, forKey: .records) ?? []
+    }
 }

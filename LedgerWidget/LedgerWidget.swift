@@ -39,9 +39,17 @@ struct LedgerProvider: TimelineProvider {
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<LedgerEntry>) -> Void) {
+        let now = Date()
         let entry = loadEntry()
-        // 系统在此时间后请求下一帧；App 内记一笔也会主动触发刷新
-        let next = Calendar.current.date(byAdding: .hour, value: 1, to: Date()) ?? Date().addingTimeInterval(3600)
+        let cal = Calendar.current
+
+        // 「今日」必须在 0 点重算：把下一次刷新对齐到最近的午夜或 1 小时后，取更早者。
+        let nextMidnight = cal.nextDate(after: now,
+                                        matching: DateComponents(hour: 0, minute: 0, second: 0),
+                                        matchingPolicy: .nextTime)
+            ?? now.addingTimeInterval(3600)
+        let inOneHour = now.addingTimeInterval(3600)
+        let next = min(nextMidnight, inOneHour)
         completion(Timeline(entries: [entry], policy: .after(next)))
     }
 
@@ -56,8 +64,9 @@ struct LedgerProvider: TimelineProvider {
         let now = Date()
         let today = data.records.filter { cal.isDateInToday($0.date) }
         let month = data.records.filter { cal.isDate($0.date, equalTo: now, toGranularity: .month) }
-        let sum = { (items: [Transaction], type: RecordType) in
-            items.filter { $0.type == type }.reduce(0) { $0 + $1.amount }
+        // 求和走 Decimal，避免大量小额累加后的浮点误差。
+        let sum = { (items: [Transaction], type: RecordType) -> Double in
+            Money.double(Money.sum(items, type: type))
         }
         let recent = data.records.max { $0.date < $1.date }
         let recentItems = data.records
@@ -102,26 +111,39 @@ struct LedgerWidgetView: View {
     @Environment(\.widgetFamily) private var family
 
     var body: some View {
-        switch family {
-        case .systemSmall:
-            smallView
-        case .systemLarge:
-            largeView
-        default:
-            mediumView
+        Group {
+            switch family {
+            case .systemSmall:
+                smallView
+            case .systemLarge:
+                largeView
+            default:
+                mediumView
+            }
         }
+        // 点组件任意位置直达「记一笔」，由主 App 的 onOpenURL 接住并聚焦金额。
+        .widgetURL(URL(string: "ledger://add"))
     }
 
-    // 今日大字：净额，正数绿“总收入”，负数红“总支出”
+    // 今日大字：净额，正数绿「总收入」，负数红「总支出」
     private var netTitle: String { entry.todayNet >= 0 ? "总收入" : "总支出" }
     private var netColor: Color { entry.todayNet >= 0 ? .green : .red }
+
+    private var addHint: some View {
+        Image(systemName: "plus.circle.fill")
+            .font(.caption)
+            .foregroundColor(.accentColor)
+    }
 
     private var smallView: some View {
         VStack(spacing: 0) {
             Spacer(minLength: 0) // 上下对称 Spacer，确保内容块垂直居中
             VStack(alignment: .leading, spacing: 5) {
-                Text("今日")
-                    .font(.headline)
+                HStack {
+                    Text("今日").font(.headline)
+                    Spacer(minLength: 2)
+                    addHint
+                }
                 Text(netTitle)
                     .font(.caption2)
                     .foregroundColor(.secondary)
@@ -148,8 +170,12 @@ struct LedgerWidgetView: View {
         HStack(spacing: 14) {
             // 左：今日（大标题）+ 总支出（小标题）两行；金额垂直居中于左区
             VStack(alignment: .leading, spacing: 2) {
-                Text("今日")
-                    .font(.title3.weight(.semibold))
+                HStack {
+                    Text("今日")
+                        .font(.title3.weight(.semibold))
+                    Spacer(minLength: 2)
+                    addHint
+                }
                 Text(netTitle)
                     .font(.caption2)
                     .foregroundColor(.secondary)
@@ -214,6 +240,7 @@ struct LedgerWidgetView: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline) {
                     Text("今日").font(.caption).foregroundColor(.secondary)
+                    addHint
                     Spacer(minLength: 4)
                     HStack(spacing: 6) {
                         Text("本月").foregroundColor(.secondary)
@@ -283,7 +310,7 @@ struct LedgerWidgetView: View {
     }
 
     private func money(_ v: Double) -> String {
-        String(format: "¥%.2f", v)
+        Money.string(v)
     }
 }
 
@@ -307,8 +334,8 @@ extension LedgerEntry {
         ]
         return LedgerEntry(date: now, todayExpense: 88.5, todayIncome: 170,
                            monthExpense: 770.17, monthIncome: 170,
-                           recentName: "跑腿", recentAmount: 30, recentIsExpense: true,
-                           hasRecent: true, recentItems: items)
+                           recentName: "跑腿", recentAmount: 30,
+                           recentIsExpense: true, hasRecent: true, recentItems: items)
     }
 }
 
@@ -321,7 +348,7 @@ struct LedgerWidget: Widget {
             LedgerWidgetView(entry: entry)
         }
         .configurationDisplayName("快捷记账")
-        .description("今日收支、最近记录与本月累计")
+        .description("点击可快速记一笔 · 今日收支、最近记录与本月累计")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
     }
 }
