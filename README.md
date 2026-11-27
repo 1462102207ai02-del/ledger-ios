@@ -36,21 +36,28 @@ Bundle ID：`com.mazexin.Bookkeeping`，App Group：`group.com.mazexin.Bookkeepi
 
 小组件通过 `ledger://add` 唤起主 App（URL Scheme 注册在 `LedgerApp/Info.plist`），主 App 切到「记一笔」并自动聚焦金额输入框。
 
-## 如何构建 IPA
+## 如何构建 / 安装 IPA
 
 源码本身不能直接在 Windows 上编译 iOS 包，构建交给 GitHub Actions：
 
 1. 每次 `git push` 到 `main` 分支会自动触发构建；也可在仓库 Actions 页手动点 **Run workflow**。
-2. 构建完成后，进入该次运行的页面，在底部 **Artifacts** 区下载 `LedgerApp-TrollStore`（一个 zip）。
-3. 解压后得到三个 IPA：
+2. 构建完成后，进入该次运行的页面，在底部 **Artifacts** 区下载 `LedgerApp-IPA`（一个 zip）。
+3. 解压后得到**唯一一个** `LedgerApp.ipa`。
 
-| 产物 | 用途 |
-| --- | --- |
-| `LedgerApp-TrollStore.ipa` | **主推**：`ldid` 伪签 + App Group，小组件可正常读到账本，用 TrollStore 安装 |
-| `LedgerApp-SideloadWidget.ipa` | 真证书自签、保留 widget，供 LCSign 等带 App Group profile 的场景 |
-| `LedgerApp-Sideload.ipa` | 真证书自签、去掉 widget，兼容性最好但小组件显示空数据 |
+### 只出一个包，两种装法都支持全部功能
 
-构建流程：XcodeGen 生成工程 → xcodebuild 编译未签名 app → 分别打包 → `ldid -S` 伪签（仅 TrollStore 版）→ 上传 artifact。伪签名正是 TrollStore 所需要的形式，无需开发者账号。
+早期版本按「签名方式」拆成三个包，其实三个包是同一份 `LedgerApp.app`，差异只在要不要 `ldid` 伪签、要不要删 `PlugIns`。这既没必要，还会让自签版丢掉小组件。现在合并为单一通用包：
+
+- **保留 `PlugIns/LedgerWidget.appex`**：小组件扩展一定在包里，桌面能添加、能点击直达「记一笔」。这与用哪种证书无关。
+- **主 App 与小组件都做 `ldid -S` 伪签并写入 App Group**：TrollStore 靠 CoreTrust 直接信任这个 ad-hoc 签名，权限随签名生效，小组件立刻能读到账本，不需要开发者账号或描述文件。
+- **真证书工具（LCSign / 爱思 / AltStore / Sideloadly）重签同一份 IPA**：重签会覆盖签名，但不会删插件、不会改代码，所以装的仍是这个包，功能完全一致。若你的 profile 带 `group.com.mazexin.Bookkeeping`，小组件同样能读数据；不带则退回 App 沙盒 Documents，小组件显示空数据（这是 App Group 授权的事，与打包无关）。
+
+| 安装方式 | 签名 | 主 App 功能 | 小组件 |
+| --- | --- | --- | --- |
+| TrollStore / TrollFools | 包内 `ldid` 伪签（已带 App Group） | 全部 | 有，且能读到账本 |
+| 真证书自签 | 工具重签覆盖 | 全部（同一份代码） | 有，读数据取决于 profile 是否带 App Group |
+
+构建流程：XcodeGen 生成工程 → xcodebuild 编译未签名 app → 一次 `ldid -S` 对主 App 与 widget 伪签 → 打包成单个 IPA → 上传 artifact。取包也可直接跑 `bash scripts/fetch-ipa.sh [commit短sha]`，会把通用版放到桌面 `快捷记账.ipa`。
 
 ## 修改内置项目
 

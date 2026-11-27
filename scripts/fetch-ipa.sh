@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
-# 从 GitHub Actions 拉取成功构建的 TrollStore ipa 到桌面
+# 从 GitHub Actions 拉取成功构建的通用 IPA 到桌面
 # 用法：bash scripts/fetch-ipa.sh [commit短sha]  传了则只拉指定 commit 的构建
+#
+# 现在只产出一个通用包 LedgerApp.ipa：TrollStore 直装与真证书工具重签共用。
 set -euo pipefail
 
 WANT_SHA="${1:-}"
 
 OWNER="1462102207ai02-del"
 REPO="ledger-ios"
-ARTIFACT_NAME="LedgerApp-TrollStore"
+# 新工作流用 LedgerApp-IPA；保留旧名以兼容历史构建
+ARTIFACT_NAMES=("LedgerApp-IPA" "LedgerApp-TrollStore")
+IPA_NAME="LedgerApp.ipa"
 
 # 自动探测桌面路径（Windows Git Bash / macOS / Linux）
 detect_desktop() {
@@ -55,16 +59,18 @@ echo "    构建 #$RUN_ID"
 
 echo "==> 查找 ipa 产物..."
 ART_JSON="$(curl -s --max-time 30 "${HDR[@]}" "$API/actions/runs/$RUN_ID/artifacts")"
-ART_ID="$(echo "$ART_JSON" | ART_NAME="$ARTIFACT_NAME" python -c "
+ART_NAMES="$(IFS='|'; echo "${ARTIFACT_NAMES[*]}")"
+export ART_NAMES
+ART_ID="$(echo "$ART_JSON" | python -c "
 import sys,json,os
 d=json.load(sys.stdin)
-name=os.environ['ART_NAME']
+names=set(os.environ['ART_NAMES'].split('|'))
 for a in d.get('artifacts',[]):
-    if a['name']==name and not a.get('expired'):
+    if a['name'] in names and not a.get('expired'):
         print(a['id']); break
 " 2>/dev/null || true)"
 if [ -z "$ART_ID" ]; then
-  echo "❌ 该构建没有找到名为 $ARTIFACT_NAME 的有效产物（可能已过期）。"
+  echo "❌ 该构建没有找到有效的 IPA 产物（可能已过期）。"
   exit 1
 fi
 echo "    产物 #$ART_ID"
@@ -75,36 +81,17 @@ trap 'rm -rf "$TMP"' EXIT
 curl -sL --max-time 180 "${HDR[@]}" -o "$TMP/artifact.zip" "$API/actions/artifacts/$ART_ID/zip"
 unzip -qo "$TMP/artifact.zip" -d "$TMP/out"
 
-TROLL_IPA="$(find "$TMP/out" -name 'LedgerApp-TrollStore.ipa' -type f | head -1)"
-SIDELOAD_IPA="$(find "$TMP/out" -name 'LedgerApp-Sideload.ipa' -type f | head -1)"
-SIDEWIDGET_IPA="$(find "$TMP/out" -name 'LedgerApp-SideloadWidget.ipa' -type f | head -1)"
-
-# 兼容旧构建：没有区分产物名时，取第一个 ipa 当 TrollStore 版
-if [ -z "$TROLL_IPA" ] && [ -z "$SIDELOAD_IPA" ]; then
-  TROLL_IPA="$(find "$TMP/out" -name '*.ipa' -type f | head -1)"
+IPA="$(find "$TMP/out" -name "$IPA_NAME" -type f | head -1)"
+# 兼容旧构建（TrollStore 版文件名）
+if [ -z "$IPA" ]; then
+  IPA="$(find "$TMP/out" -name '*.ipa' -type f | head -1)"
 fi
-if [ -z "$TROLL_IPA" ] && [ -z "$SIDELOAD_IPA" ]; then
+if [ -z "$IPA" ]; then
   echo "❌ 解压后未找到 ipa 文件。"
   exit 1
 fi
 
-if [ -n "$TROLL_IPA" ]; then
-  TARGET="$DESKTOP/快捷记账.ipa"
-  cp "$TROLL_IPA" "$TARGET"
-  echo "✅ TrollStore 版已放到桌面：$TARGET"
-  ls -lh "$TARGET" | awk '{print "    大小: "$5}'
-fi
-
-if [ -n "$SIDELOAD_IPA" ]; then
-  SIDE_TARGET="$DESKTOP/快捷记账-自签版.ipa"
-  cp "$SIDELOAD_IPA" "$SIDE_TARGET"
-  echo "✅ 真证书自签裸包已放到桌面：$SIDE_TARGET"
-  ls -lh "$SIDE_TARGET" | awk '{print "    大小: "$5}'
-fi
-
-if [ -n "$SIDEWIDGET_IPA" ]; then
-  SW_TARGET="$DESKTOP/快捷记账-自签带组件版.ipa"
-  cp "$SIDEWIDGET_IPA" "$SW_TARGET"
-  echo "✅ 真证书自签带组件版已放到桌面：$SW_TARGET"
-  ls -lh "$SW_TARGET" | awk '{print "    大小: "$5}'
-fi
+TARGET="$DESKTOP/快捷记账.ipa"
+cp "$IPA" "$TARGET"
+echo "✅ 通用版已放到桌面：$TARGET（TrollStore 直装 / 真证书重签共用）"
+ls -lh "$TARGET" | awk '{print "    大小: "$5}'

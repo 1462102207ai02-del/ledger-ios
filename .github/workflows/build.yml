@@ -1,4 +1,4 @@
-name: Build TrollStore IPA
+name: Build IPA
 
 on:
   workflow_dispatch:
@@ -35,7 +35,12 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             build
 
-      - name: Package IPA
+      # 只产出一个通用 IPA：TrollStore 直装与真证书工具重签共用同一份包。
+      # 关键前提：
+      #  - PlugIns/LedgerWidget.appex 必须保留，小组件才存在（与证书无关）
+      #  - ldid ad-hoc 伪签写入 App Group，TrollStore 靠 CoreTrust 直接信任该签名
+      #  - 真证书工具重签时会覆盖签名，但不会删插件 / 改代码，装的仍是这个包
+      - name: Sign and package universal IPA
         run: |
           APP_PATH="build/Build/Products/Release-iphoneos/LedgerApp.app"
           if [ ! -d "$APP_PATH" ]; then
@@ -43,42 +48,18 @@ jobs:
             exit 1
           fi
 
-          # ===== 产物 1：真证书自签裸包（LCSign / 爱思 / AltStore 用）=====
-          # 与 TrollStore 版的两点关键差异：
-          #  1) 不做 ldid 伪签，避免野生 App Group entitlement 与分发证书/profile 冲突
-          #  2) 去掉 widget 扩展——自签后 App Group 失效，widget 本就取不到数据；
-          #     且扩展有独立 bundle id，签名证书的描述文件未必覆盖，是安装失败的常见诱因
-          # 主 App 数据层有降级：共享容器读不到会回退 Documents，记账主功能不受影响。
-          rm -rf Payload && mkdir -p Payload
-          cp -R "$APP_PATH" Payload/LedgerApp.app
-          # 清理编译期可能残留的签名目录与所有扩展
-          find Payload/LedgerApp.app -type d -name "_CodeSignature" -exec rm -rf {} + 2>/dev/null || true
-          rm -rf Payload/LedgerApp.app/PlugIns
-          # 自签不需要隐私清单注入（不走 App Store 审核），但保留也无害，这里保留主 App 的
-          zip -qry LedgerApp-Sideload.ipa Payload
-          ls -lh LedgerApp-Sideload.ipa
-          echo "=== 自签裸包内 PlugIns（应为空）==="
-          unzip -l LedgerApp-Sideload.ipa | grep -i "PlugIns" || echo "  (无扩展)"
-
-          # ===== 产物 1.5：真证书自签带组件版（LCSign 用）=====
-          # 与裸包的唯一差异：保留 widget 扩展（PlugIns）。
-          # 同样不做 ldid 伪签——伪签里的野生 App Group entitlement 会跟真证书/profile 冲突，
-          # 这是之前安装失败的主因。App Group 权限改由用户导入 LCSign 的 provisioning profile 决定：
-          #   - profile 含 group.com.mazexin.Bookkeeping → 装上后小组件可读到数据
-          #   - profile 不含该 group → 小组件会出现但显示空数据
-          rm -rf Payload && mkdir -p Payload
-          cp -R "$APP_PATH" Payload/LedgerApp.app
-          find Payload/LedgerApp.app -type d -name "_CodeSignature" -exec rm -rf {} + 2>/dev/null || true
-          zip -qry LedgerApp-SideloadWidget.ipa Payload
-          ls -lh LedgerApp-SideloadWidget.ipa
-          echo "=== 自签带组件版内 PlugIns（应含 LedgerWidget.appex）==="
-          unzip -l LedgerApp-SideloadWidget.ipa | grep -i "PlugIns" || echo "  (无扩展，异常)"
-
-          # ===== 产物 2：TrollStore 版（ldid 伪签 + App Group，小组件可用）=====
-          cp LedgerApp/PrivacyInfo.xcprivacy "$APP_PATH/PrivacyInfo.xcprivacy"
           WIDGET_APP="$APP_PATH/PlugIns/LedgerWidget.appex"
-          test -d "$WIDGET_APP" || { echo "::error::widget appex not embedded"; exit 1; }
+          if [ ! -d "$WIDGET_APP" ]; then
+            echo "::error::widget appex not embedded"
+            exit 1
+          fi
+
+          # 隐私清单：主 App 与小组件各放一份
+          cp LedgerApp/PrivacyInfo.xcprivacy "$APP_PATH/PrivacyInfo.xcprivacy"
           cp LedgerWidget/PrivacyInfo.xcprivacy "$WIDGET_APP/PrivacyInfo.xcprivacy"
+
+          # 未签名编译不应残留签名目录，清掉后统一由 ldid 生成 ad-hoc 签名
+          find "$APP_PATH" -type d -name "_CodeSignature" -exec rm -rf {} + 2>/dev/null || true
 
           GROUP="group.com.mazexin.Bookkeeping"
           grep -q "$GROUP" LedgerApp/LedgerApp.entitlements \
@@ -86,6 +67,7 @@ jobs:
           grep -q "$GROUP" LedgerWidget/LedgerWidget.entitlements \
             || { echo "::error::App Group missing in widget entitlements"; exit 1; }
 
+          # 唯一一次签名：主 App 与小组件都写入带 App Group 的 ad-hoc 签名
           ldid -SLedgerApp/LedgerApp.entitlements "$APP_PATH/LedgerApp"
           ldid -e "$APP_PATH/LedgerApp" | grep -q "$GROUP" \
             || { echo "::error::App Group not embedded in app signature"; exit 1; }
@@ -96,18 +78,19 @@ jobs:
 
           rm -rf Payload && mkdir -p Payload
           cp -R "$APP_PATH" Payload/LedgerApp.app
-          zip -qry LedgerApp-TrollStore.ipa Payload
-          ls -lh LedgerApp-TrollStore.ipa
-          echo "=== TrollStore 版内 PlugIns 内容 ==="
-          unzip -l LedgerApp-TrollStore.ipa | grep -i "PlugIns" || true
+          zip -qry LedgerApp.ipa Payload
+          ls -lh LedgerApp.ipa
+
+          echo "=== 单包内容核对 ==="
+          unzip -l LedgerApp.ipa | grep -iE "PlugIns/LedgerWidget.appex/(Info.plist|LedgerWidget)|PrivacyInfo" || true
+          IPA_COUNT="$(find . -maxdepth 1 -name '*.ipa' | wc -l | tr -d ' ')"
+          echo "IPA_COUNT=$IPA_COUNT"
+          test "$IPA_COUNT" = "1" || { echo "::error::expected exactly one IPA"; exit 1; }
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: LedgerApp-TrollStore
-          path: |
-            LedgerApp-TrollStore.ipa
-            LedgerApp-Sideload.ipa
-            LedgerApp-SideloadWidget.ipa
+          name: LedgerApp-IPA
+          path: LedgerApp.ipa
           if-no-files-found: error
           retention-days: 30
