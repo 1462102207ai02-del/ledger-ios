@@ -279,10 +279,10 @@ struct RecordEditorView: View {
                 }
 
                 Section(header: Text("项目"),
-                        footer: Text("居中弹窗内可搜索，或现场输入自定义项目；保存后自动归组。")) {
-                    pickerButton(title: categoryName,
-                                 count: availableCategories.count,
-                                 systemImage: "square.grid.2x2") {
+                        footer: Text("点击选择或输入对应的项目")) {
+                    PickerEntryButton(title: categoryName,
+                                      count: availableCategories.count,
+                                      systemImage: "square.grid.2x2") {
                         activePicker = .category
                     }
                 }
@@ -296,9 +296,9 @@ struct RecordEditorView: View {
                 }
 
                 Section(header: Text("支付方式")) {
-                    pickerButton(title: paymentName,
-                                 count: store.paymentMethods.count,
-                                 systemImage: "creditcard") {
+                    PickerEntryButton(title: paymentName,
+                                      count: store.paymentMethods.count,
+                                      systemImage: "creditcard") {
                         activePicker = .payment
                     }
                 }
@@ -377,32 +377,6 @@ struct RecordEditorView: View {
             }
         }
         .animation(.easeInOut(duration: 0.18), value: activePicker != nil)
-    }
-
-    private func pickerButton(title: String, count: Int, systemImage: String,
-                              action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 10) {
-                Image(systemName: systemImage)
-                    .foregroundColor(.accentColor)
-                    .frame(width: 22)
-                Text(title.isEmpty ? "点按选择" : title)
-                    .foregroundColor(title.isEmpty ? .secondary : .primary)
-                Spacer()
-                Text("\(count) 项").font(.caption).foregroundColor(.secondary)
-                Image(systemName: "chevron.right")
-                    .foregroundColor(.secondary)
-                    .imageScale(.small)
-            }
-            .padding(.vertical, 10)
-            .padding(.horizontal, 12)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color(.systemGray6))
-            )
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
     }
 
     private func save() {

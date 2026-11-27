@@ -82,10 +82,10 @@ final class DataStore: ObservableObject {
         let c = categoryName.trimmingCharacters(in: .whitespacesAndNewlines)
         let p = paymentName.trimmingCharacters(in: .whitespacesAndNewlines)
         if !c.isEmpty && !categories.contains(where: { $0.type == type && $0.name == c }) {
-            categories.append(Category(name: c, type: type, icon: "🧾"))
+            categories.append(Category(name: c, type: type))
         }
         if !p.isEmpty && !paymentMethods.contains(where: { $0.name == p }) {
-            paymentMethods.append(PaymentMethod(name: p, icon: "💳"))
+            paymentMethods.append(PaymentMethod(name: p))
         }
     }
 
@@ -101,10 +101,10 @@ final class DataStore: ObservableObject {
     }
 
     // MARK: 项目
-    func addCategory(name: String, type: RecordType, icon: String = "🧾") {
+    func addCategory(name: String, type: RecordType) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        categories.append(Category(name: trimmed, type: type, icon: icon))
+        categories.append(Category(name: trimmed, type: type))
         persist()
     }
 
@@ -132,10 +132,10 @@ final class DataStore: ObservableObject {
     }
 
     // MARK: 支付方式
-    func addPaymentMethod(name: String, icon: String = "💳") {
+    func addPaymentMethod(name: String) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        paymentMethods.append(PaymentMethod(name: trimmed, icon: icon))
+        paymentMethods.append(PaymentMethod(name: trimmed))
         persist()
     }
 

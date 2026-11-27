@@ -9,6 +9,9 @@ enum RecordType: String, Codable, CaseIterable, Identifiable {
 }
 
 // MARK: - 项目（支出项 / 收入项）
+// 说明：icon / isBuiltIn 是早期版本遗留字段，当前 UI 与逻辑都不再读取。
+// 保留它们只为兼容已导出的账本 JSON —— 解码时多余键会被忽略、编码时仍会写出，
+// 这样新旧版本互相导入都不会失败。项目不再携带任何图标。
 struct Category: Codable, Identifiable, Hashable {
     var id: UUID
     var name: String
@@ -16,7 +19,7 @@ struct Category: Codable, Identifiable, Hashable {
     var icon: String
     var isBuiltIn: Bool
 
-    init(id: UUID = UUID(), name: String, type: RecordType, icon: String, isBuiltIn: Bool = false) {
+    init(id: UUID = UUID(), name: String, type: RecordType, icon: String = "", isBuiltIn: Bool = false) {
         self.id = id
         self.name = name
         self.type = type
@@ -25,24 +28,24 @@ struct Category: Codable, Identifiable, Hashable {
     }
 
     static let builtInExpense: [Category] = [
-        Category(name: "早餐", type: .expense, icon: "🥐", isBuiltIn: true),
-        Category(name: "午餐", type: .expense, icon: "🍱", isBuiltIn: true),
-        Category(name: "晚餐", type: .expense, icon: "🍚", isBuiltIn: true),
-        Category(name: "宵夜", type: .expense, icon: "🍜", isBuiltIn: true),
-        Category(name: "麻将", type: .expense, icon: "🎲", isBuiltIn: true),
-        Category(name: "香烟", type: .expense, icon: "🚬", isBuiltIn: true),
-        Category(name: "饮料", type: .expense, icon: "🥤", isBuiltIn: true),
-        Category(name: "信用卡", type: .expense, icon: "💳", isBuiltIn: true),
-        Category(name: "花呗", type: .expense, icon: "🌸", isBuiltIn: true),
-        Category(name: "借呗", type: .expense, icon: "💸", isBuiltIn: true),
-        Category(name: "京东白条", type: .expense, icon: "🛒", isBuiltIn: true),
-        Category(name: "京东金条", type: .expense, icon: "🪙", isBuiltIn: true),
-        Category(name: "分付", type: .expense, icon: "📲", isBuiltIn: true),
+        Category(name: "早餐", type: .expense, isBuiltIn: true),
+        Category(name: "午餐", type: .expense, isBuiltIn: true),
+        Category(name: "晚餐", type: .expense, isBuiltIn: true),
+        Category(name: "宵夜", type: .expense, isBuiltIn: true),
+        Category(name: "麻将", type: .expense, isBuiltIn: true),
+        Category(name: "香烟", type: .expense, isBuiltIn: true),
+        Category(name: "饮料", type: .expense, isBuiltIn: true),
+        Category(name: "信用卡", type: .expense, isBuiltIn: true),
+        Category(name: "花呗", type: .expense, isBuiltIn: true),
+        Category(name: "借呗", type: .expense, isBuiltIn: true),
+        Category(name: "京东白条", type: .expense, isBuiltIn: true),
+        Category(name: "京东金条", type: .expense, isBuiltIn: true),
+        Category(name: "分付", type: .expense, isBuiltIn: true),
     ]
 
     static let builtInIncome: [Category] = [
-        Category(name: "工资", type: .income, icon: "💰", isBuiltIn: true),
-        Category(name: "货款", type: .income, icon: "📦", isBuiltIn: true),
+        Category(name: "工资", type: .income, isBuiltIn: true),
+        Category(name: "货款", type: .income, isBuiltIn: true),
     ]
 }
 
@@ -53,7 +56,7 @@ struct PaymentMethod: Codable, Identifiable, Hashable {
     var icon: String
     var isBuiltIn: Bool
 
-    init(id: UUID = UUID(), name: String, icon: String, isBuiltIn: Bool = false) {
+    init(id: UUID = UUID(), name: String, icon: String = "", isBuiltIn: Bool = false) {
         self.id = id
         self.name = name
         self.icon = icon
@@ -61,10 +64,10 @@ struct PaymentMethod: Codable, Identifiable, Hashable {
     }
 
     static let builtIn: [PaymentMethod] = [
-        PaymentMethod(name: "微信", icon: "💬", isBuiltIn: true),
-        PaymentMethod(name: "支付宝", icon: "🅰️", isBuiltIn: true),
-        PaymentMethod(name: "银行卡", icon: "💳", isBuiltIn: true),
-        PaymentMethod(name: "现金", icon: "💵", isBuiltIn: true),
+        PaymentMethod(name: "微信", isBuiltIn: true),
+        PaymentMethod(name: "支付宝", isBuiltIn: true),
+        PaymentMethod(name: "银行卡", isBuiltIn: true),
+        PaymentMethod(name: "现金", isBuiltIn: true),
     ]
 }
 

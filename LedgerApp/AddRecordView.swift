@@ -2,7 +2,7 @@ import SwiftUI
 import Foundation
 
 // MARK: - 平铺选择器的通用类型（记一笔页与编辑页共用）
-/// 纯文字选项：不再携带任何图标。
+/// 纯文字选项。
 struct PickerOption: Identifiable, Hashable {
     let id = UUID()
     let name: String
@@ -17,6 +17,42 @@ enum PickerKind: Identifiable {
         case .category: return "category"
         case .payment: return "payment"
         }
+    }
+}
+
+// MARK: - 选择入口按钮（记一笔页与编辑记录页共用）
+/// 表单里的一行入口：显示当前选中项与可选项目数，点按弹出居中选择器。
+struct PickerEntryButton: View {
+    let title: String
+    let count: Int
+    let systemImage: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: systemImage)
+                    .foregroundColor(.accentColor)
+                    .frame(width: 22)
+                Text(title.isEmpty ? "点按选择" : title)
+                    .foregroundColor(title.isEmpty ? .secondary : .primary)
+                Spacer()
+                Text("\(count) 项")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Image(systemName: "chevron.right")
+                    .foregroundColor(.secondary)
+                    .imageScale(.small)
+            }
+            .padding(.vertical, 10)
+            .padding(.horizontal, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color(.systemGray6))
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -258,10 +294,10 @@ struct AddRecordView: View {
                 }
 
                 Section(header: Text(type == .expense ? "支出项目" : "收入项目"),
-                        footer: Text("点按后在居中弹窗里平铺选择，纯文字、可搜索；也可现场输入自定义项目，保存账单后自动归组。")) {
-                    tiledSelectionButton(title: categoryName,
-                                         count: availableCategories.count,
-                                         systemImage: "square.grid.2x2") {
+                        footer: Text(type == .expense ? "点击选择或输入对应的支出项目" : "点击选择或输入对应的收入项目")) {
+                    PickerEntryButton(title: categoryName,
+                                      count: availableCategories.count,
+                                      systemImage: "square.grid.2x2") {
                         activePicker = .category
                     }
                 }
@@ -275,10 +311,11 @@ struct AddRecordView: View {
                     }
                 }
 
-                Section(header: Text("支付方式")) {
-                    tiledSelectionButton(title: paymentName,
-                                         count: store.paymentMethods.count,
-                                         systemImage: "creditcard") {
+                Section(header: Text("支付方式"),
+                        footer: Text("点击选择或输入对应的支付方式")) {
+                    PickerEntryButton(title: paymentName,
+                                      count: store.paymentMethods.count,
+                                      systemImage: "creditcard") {
                         activePicker = .payment
                     }
                 }
@@ -343,35 +380,6 @@ struct AddRecordView: View {
             }
         }
         .animation(.easeInOut(duration: 0.18), value: activePicker != nil)
-    }
-
-    /// 入口按钮：显示当前选中项与项目总数，点按弹出居中选择器。
-    private func tiledSelectionButton(title: String, count: Int, systemImage: String,
-                                      action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 10) {
-                Image(systemName: systemImage)
-                    .foregroundColor(.accentColor)
-                    .frame(width: 22)
-                Text(title.isEmpty ? "点按选择" : title)
-                    .foregroundColor(title.isEmpty ? .secondary : .primary)
-                Spacer()
-                Text("\(count) 项")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                Image(systemName: "chevron.right")
-                    .foregroundColor(.secondary)
-                    .imageScale(.small)
-            }
-            .padding(.vertical, 10)
-            .padding(.horizontal, 12)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color(.systemGray6))
-            )
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
     }
 
     private func setupDefaults() {

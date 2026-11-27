@@ -23,8 +23,6 @@ enum SharedStorage {
     /// 实际生效的数据文件位置，所有写入统一落这里。
     static var activeFileURL: URL { sharedFileURL ?? legacyFileURL }
 
-    static var dataDirectoryURL: URL { activeFileURL.deletingLastPathComponent() }
-
     private static var candidateURLs: [URL] {
         var urls: [URL] = []
         if let shared = sharedFileURL { urls.append(shared) }
@@ -54,7 +52,7 @@ enum SharedStorage {
         return .empty
     }
 
-    /// 小组件用的简化读取（保持旧行为，读不到返回 nil）。
+    /// 小组件读取入口：依次尝试共享容器与旧路径，读不到返回 nil。
     static func load() -> AppData? {
         if case .success(let data) = loadResult() { return data }
         return nil

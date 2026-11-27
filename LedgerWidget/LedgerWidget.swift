@@ -18,14 +18,9 @@ struct LedgerEntry: TimelineEntry {
     let todayIncome: Double
     let monthExpense: Double
     let monthIncome: Double
-    let recentName: String
-    let recentAmount: Double
-    let recentIsExpense: Bool
-    let hasRecent: Bool
     let recentItems: [RecentItem]
 
     var todayNet: Double { todayIncome - todayExpense }
-    var monthNet: Double { monthIncome - monthExpense }
 }
 
 // MARK: - Provider
@@ -56,9 +51,7 @@ struct LedgerProvider: TimelineProvider {
     private func loadEntry() -> LedgerEntry {
         guard let data = SharedStorage.load() else {
             return LedgerEntry(date: Date(), todayExpense: 0, todayIncome: 0,
-                               monthExpense: 0, monthIncome: 0,
-                               recentName: "", recentAmount: 0, recentIsExpense: true,
-                               hasRecent: false, recentItems: [])
+                               monthExpense: 0, monthIncome: 0, recentItems: [])
         }
         let cal = Calendar.current
         let now = Date()
@@ -68,7 +61,6 @@ struct LedgerProvider: TimelineProvider {
         let sum = { (items: [Transaction], type: RecordType) -> Double in
             Money.double(Money.sum(items, type: type))
         }
-        let recent = data.records.max { $0.date < $1.date }
         let recentItems = data.records
             .sorted { $0.date > $1.date }
             .prefix(13)
@@ -82,10 +74,6 @@ struct LedgerProvider: TimelineProvider {
             todayIncome: sum(today, .income),
             monthExpense: sum(month, .expense),
             monthIncome: sum(month, .income),
-            recentName: recent?.categoryName ?? "",
-            recentAmount: recent?.amount ?? 0,
-            recentIsExpense: recent?.type == .expense,
-            hasRecent: recent != nil,
             recentItems: recentItems
         )
     }
@@ -202,17 +190,17 @@ struct LedgerWidgetView: View {
                     HStack(alignment: .firstTextBaseline) {
                         Text("最近一笔").font(.caption2).foregroundColor(.secondary)
                         Spacer(minLength: 2)
-                        if entry.hasRecent, let first = entry.recentItems.first {
+                        if let first = entry.recentItems.first {
                             Text(first.timeText).font(.caption2).foregroundColor(.secondary)
                         }
                     }
-                    if entry.hasRecent {
-                        Text(entry.recentName)
+                    if let first = entry.recentItems.first {
+                        Text(first.name)
                             .font(.subheadline.weight(.semibold))
                             .lineLimit(1)
-                        Text((entry.recentIsExpense ? "-" : "+") + money(entry.recentAmount))
+                        Text((first.isExpense ? "-" : "+") + money(first.amount))
                             .font(.system(size: 16, weight: .semibold)) // 系统原生字体
-                            .foregroundColor(entry.recentIsExpense ? .red : .green)
+                            .foregroundColor(first.isExpense ? .red : .green)
                             .lineLimit(1)
                     } else {
                         Text("暂无").font(.subheadline).foregroundColor(.secondary)
@@ -333,9 +321,7 @@ extension LedgerEntry {
             RecentItem(id: UUID(), name: "花呗", amount: 76, isExpense: true, timeText: "11/15")
         ]
         return LedgerEntry(date: now, todayExpense: 88.5, todayIncome: 170,
-                           monthExpense: 770.17, monthIncome: 170,
-                           recentName: "跑腿", recentAmount: 30,
-                           recentIsExpense: true, hasRecent: true, recentItems: items)
+                           monthExpense: 770.17, monthIncome: 170, recentItems: items)
     }
 }
 

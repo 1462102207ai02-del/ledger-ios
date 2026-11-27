@@ -92,7 +92,7 @@ private struct TrendChart: View {
                     Text("日均线").font(.caption2).foregroundColor(.secondary)
                 }
                 Spacer()
-                Text("点按柱子看金额")
+                Text("点击查看具体金额")
                     .font(.caption2)
                     .foregroundColor(.secondary)
             }
