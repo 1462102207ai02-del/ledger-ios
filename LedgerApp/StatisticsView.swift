@@ -1,40 +1,237 @@
 import SwiftUI
 import Foundation
 
+// MARK: - 刻度格式化与取整
+private func axisMoney(_ value: Double) -> String {
+    if value >= 10000 { return String(format: "%.1f万", value / 10000) }
+    return String(format: "%.0f", value)
+}
+
+/// 把最大值向上取整到「好看」的刻度，避免出现 372.6 这类刻度、柱子也不会顶到天花板。
+private func niceCeiling(_ value: Double) -> Double {
+    guard value > 0 else { return 1 }
+    let exponent = floor(log10(value))
+    let base = pow(10, exponent)
+    let fraction = value / base
+    let steps: [Double] = [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]
+    let picked = steps.first { $0 >= fraction } ?? 10
+    return picked * base
+}
+
 private struct MonthPoint {
     let label: String
     let value: Double
 }
 
-/// 纯 SwiftUI 自绘柱状趋势图：不依赖 iOS 16 才有的 Charts 框架。
-private struct TrendChart: View {
-    let values: [Double]
-    let labels: [String]
-    let height: CGFloat
+/// 单行虚线（纯 Path 绘制，不依赖任何 iOS 16 API）。
+private struct DashedLine: View {
+    let color: Color
 
     var body: some View {
         GeometryReader { geo in
-            let maxValue = max(values.max() ?? 1, 1)
-            let barArea = max(geo.size.height - 18, 10)
-            HStack(alignment: .bottom, spacing: 3) {
-                ForEach(Array(values.indices), id: \.self) { i in
-                    VStack(spacing: 2) {
-                        Capsule()
-                            .fill(i == values.count - 1
-                                  ? Color.accentColor
-                                  : Color.accentColor.opacity(0.4))
-                            .frame(height: max(2, CGFloat(values[i] / maxValue) * barArea))
+            Path { path in
+                path.move(to: CGPoint(x: 0, y: 0.5))
+                path.addLine(to: CGPoint(x: geo.size.width, y: 0.5))
+            }
+            .stroke(color, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+        }
+        .frame(height: 1)
+    }
+}
+
+// MARK: - 柱状趋势图（纯 SwiftUI 自绘，兼容 iOS 15）
+/// 完整柱状图：Y 轴刻度、虚线网格与基线、日均参考线、圆角柱、
+/// 峰值/选中高亮、点按数值气泡、X 轴标签、图例与合计信息。
+private struct TrendChart: View {
+    let values: [Double]
+    let labels: [String]
+    let tint: Color
+    var height: CGFloat = 168
+
+    @State private var selectedIndex: Int? = nil
+
+    private var ceiling: Double { niceCeiling(values.max() ?? 0) }
+    private var total: Double { values.reduce(0, +) }
+    private var average: Double { values.isEmpty ? 0 : total / Double(values.count) }
+    private var peakIndex: Int? {
+        guard let peak = values.max(), peak > 0 else { return nil }
+        return values.firstIndex(of: peak)
+    }
+    private var activeIndex: Int? { selectedIndex ?? peakIndex }
+
+    private func barHeight(_ value: Double, plotHeight: CGFloat) -> CGFloat {
+        guard value > 0 else { return 0 }
+        return max(3, CGFloat(value / ceiling) * plotHeight)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("合计").font(.caption).foregroundColor(.secondary)
+                Text(Money.string(total))
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                Spacer()
+                Text("日均 \(Money.string(average))")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            plot
+
+            HStack(spacing: 14) {
+                HStack(spacing: 5) {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(tint)
+                        .frame(width: 10, height: 10)
+                    Text("支出").font(.caption2).foregroundColor(.secondary)
+                }
+                HStack(spacing: 5) {
+                    DashedLine(color: tint.opacity(0.6))
+                        .frame(width: 16, height: 1)
+                    Text("日均线").font(.caption2).foregroundColor(.secondary)
+                }
+                Spacer()
+                Text("点按柱子看金额")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color(.systemGray6))
+        )
+    }
+
+    private var plot: some View {
+        VStack(spacing: 5) {
+            HStack(alignment: .top, spacing: 4) {
+                // Y 轴：上限 / ¾ / ½ / ¼ / 0
+                VStack(spacing: 0) {
+                    ForEach((0...4).reversed(), id: \.self) { i in
+                        Text(axisMoney(ceiling * Double(i) / 4))
+                            .font(.system(size: 9, weight: .medium, design: .rounded))
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.65)
+                            .frame(maxHeight: .infinity, alignment: tickAlignment(i))
+                    }
+                }
+                .frame(width: 38, height: height)
+
+                GeometryReader { geo in
+                    let w = geo.size.width
+                    let h = geo.size.height
+                    let count = max(values.count, 1)
+                    let step = w / CGFloat(count)
+                    let barWidth = max(2, min(step * 0.58, 20))
+
+                    ZStack(alignment: .topLeading) {
+                        // 网格：4 条虚线 + 1 条实线基线
+                        VStack(spacing: 0) {
+                            ForEach(0..<4, id: \.self) { _ in
+                                DashedLine(color: Color(.systemGray4).opacity(0.75))
+                                    .frame(width: w, height: 1)
+                                Spacer(minLength: 0)
+                            }
+                            Rectangle()
+                                .fill(Color(.systemGray3))
+                                .frame(width: w, height: 1)
+                        }
+                        .frame(width: w, height: h)
+
+                        // 平均值参考线
+                        if average > 0 {
+                            let y = h - CGFloat(average / ceiling) * h
+                            DashedLine(color: tint.opacity(0.6))
+                                .frame(width: w, height: 1)
+                                .position(x: w / 2, y: y)
+                        }
+
+                        // 柱体：整列都是点击热区，柱顶圆角
+                        HStack(alignment: .bottom, spacing: 0) {
+                            ForEach(values.indices, id: \.self) { i in
+                                let barH = barHeight(values[i], plotHeight: h)
+                                ZStack(alignment: .bottom) {
+                                    Rectangle()
+                                        .fill(Color.clear)
+                                        .contentShape(Rectangle())
+                                        .onTapGesture {
+                                            withAnimation(.easeInOut(duration: 0.15)) {
+                                                selectedIndex = (selectedIndex == i) ? nil : i
+                                            }
+                                        }
+                                    if barH > 0 {
+                                        RoundedRectangle(cornerRadius: min(barWidth / 2, 4),
+                                                         style: .continuous)
+                                            .fill(i == activeIndex ? tint : tint.opacity(0.32))
+                                            .frame(width: barWidth, height: barH)
+                                    }
+                                }
+                                .frame(width: step, height: h, alignment: .bottom)
+                            }
+                        }
+                        .frame(width: w, height: h, alignment: .bottom)
+
+                        // 数值气泡：默认落在峰值，点按柱子可切换
+                        if let idx = activeIndex, idx < values.count {
+                            let barH = barHeight(values[idx], plotHeight: h)
+                            let x = step * (CGFloat(idx) + 0.5)
+                            let y = max(12, h - barH - 15)
+                            HStack(spacing: 5) {
+                                if idx < labels.count, !labels[idx].isEmpty {
+                                    Text(labels[idx])
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
+                                Text(Money.string(values[idx]))
+                                    .font(.caption2)
+                                    .fontWeight(.semibold)
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Capsule().fill(Color(.systemBackground)))
+                            .overlay(Capsule().stroke(tint.opacity(0.45), lineWidth: 0.5))
+                            .shadow(color: Color.black.opacity(0.08), radius: 3, x: 0, y: 1)
+                            .fixedSize()
+                            .position(x: min(max(x, 48), w - 48), y: y)
+                        }
+
+                        // 全零时的空状态，而不是一排空槽
+                        if total <= 0 {
+                            Text("这段区间还没有支出")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .frame(width: w, height: h, alignment: .center)
+                        }
+                    }
+                    .frame(width: w, height: h)
+                }
+                .frame(height: height)
+            }
+
+            // X 轴标签：与绘图区左边缘对齐，空字符串占位保持等距
+            HStack(spacing: 4) {
+                Spacer().frame(width: 38)
+                HStack(spacing: 0) {
+                    ForEach(values.indices, id: \.self) { i in
                         Text(i < labels.count ? labels[i] : "")
-                            .font(.system(size: 8))
+                            .font(.system(size: 9, design: .rounded))
                             .foregroundColor(.secondary)
                             .lineLimit(1)
                             .minimumScaleFactor(0.6)
+                            .frame(maxWidth: .infinity)
                     }
-                    .frame(maxWidth: .infinity)
                 }
             }
         }
-        .frame(height: height)
+    }
+
+    private func tickAlignment(_ i: Int) -> Alignment {
+        if i == 4 { return .top }
+        if i == 0 { return .bottom }
+        return .center
     }
 }
 
@@ -90,10 +287,12 @@ struct StatisticsView: View {
         }
     }
 
+    /// X 轴只标少量日期，避免 31 个标签挤成一团。
     private var dailyLabels: [String] {
         dailyTrend.indices.map { i in
             let day = i + 1
-            return (day == 1 || day % 5 == 0 || i == dailyTrend.count - 1) ? "\(day)" : ""
+            let show = day == 1 || day == 10 || day == 20 || i == dailyTrend.count - 1
+            return show ? "\(day)" : ""
         }
     }
 
@@ -187,21 +386,21 @@ struct StatisticsView: View {
     }
 
     private var trendSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 8) {
                 Text("本月每日支出").font(.headline)
                 if dailyTrend.isEmpty {
                     Text("暂无数据").foregroundColor(.secondary).font(.subheadline)
                 } else {
-                    TrendChart(values: dailyTrend, labels: dailyLabels, height: 110)
+                    TrendChart(values: dailyTrend, labels: dailyLabels,
+                               tint: .red, height: 172)
                 }
             }
-            Divider()
             VStack(alignment: .leading, spacing: 8) {
                 Text("近 6 个月支出").font(.headline)
                 TrendChart(values: recentMonths.map { $0.value },
                            labels: recentMonths.map { $0.label },
-                           height: 100)
+                           tint: .orange, height: 150)
             }
         }
     }
@@ -213,9 +412,12 @@ struct StatisticsView: View {
                 Text("暂无数据").foregroundColor(.secondary).font(.subheadline)
             } else {
                 let maxValue = categorySums.first?.value ?? 1
+                let total = categorySums.reduce(0) { $0 + $1.value }
                 ForEach(categorySums, id: \.name) { item in
                     BarRow(title: item.name, value: item.value,
-                           ratio: maxValue > 0 ? item.value / maxValue : 0, color: .red)
+                           ratio: maxValue > 0 ? item.value / maxValue : 0,
+                           share: total > 0 ? item.value / total : 0,
+                           color: .red)
                 }
             }
         }
@@ -228,9 +430,12 @@ struct StatisticsView: View {
                 Text("暂无数据").foregroundColor(.secondary).font(.subheadline)
             } else {
                 let maxValue = paymentSums.first?.value ?? 1
+                let total = paymentSums.reduce(0) { $0 + $1.value }
                 ForEach(paymentSums, id: \.name) { item in
                     BarRow(title: item.name, value: item.value,
-                           ratio: maxValue > 0 ? item.value / maxValue : 0, color: .blue)
+                           ratio: maxValue > 0 ? item.value / maxValue : 0,
+                           share: total > 0 ? item.value / total : 0,
+                           color: .blue)
                 }
             }
         }
@@ -258,26 +463,35 @@ private struct StatColumn: View {
 private struct BarRow: View {
     let title: String
     let value: Double
+    /// 相对最大项的比例，决定条形长度
     let ratio: Double
+    /// 相对合计的真实占比，显示为百分比
+    let share: Double
     let color: Color
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(title).font(.subheadline)
                 Spacer()
-                Text(Money.string(value)).font(.subheadline).foregroundColor(.secondary)
+                Text(Money.string(value))
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                Text(String(format: "%.0f%%", min(max(share, 0), 1) * 100))
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .frame(width: 34, alignment: .trailing)
             }
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    Rectangle().fill(Color(.systemGray5)).frame(height: 10).cornerRadius(5)
-                    Rectangle()
-                        .fill(color)
-                        .frame(width: geo.size.width * CGFloat(min(max(ratio, 0), 1)), height: 10)
-                        .cornerRadius(5)
+                    Capsule().fill(Color(.systemGray5)).frame(height: 9)
+                    Capsule()
+                        .fill(color.opacity(0.85))
+                        .frame(width: max(0, geo.size.width * CGFloat(min(max(ratio, 0), 1))),
+                               height: 9)
                 }
             }
-            .frame(height: 10)
+            .frame(height: 9)
         }
     }
 }

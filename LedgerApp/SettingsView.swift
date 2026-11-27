@@ -20,6 +20,11 @@ struct SettingsView: View {
     @State private var newPayment = ""
     @State private var showResetConfirm = false
 
+    // 三个大类默认收起：进设置页先看到分组，点开才铺开项目清单
+    @State private var expenseExpanded = false
+    @State private var incomeExpanded = false
+    @State private var paymentExpanded = false
+
     // 重命名弹窗状态
     @State private var renameTarget: RenameTarget?
     @State private var renameText = ""
@@ -48,60 +53,47 @@ struct SettingsView: View {
         }
     }
 
+    private var expenseCount: Int { store.categories.filter { $0.type == .expense }.count }
+    private var incomeCount: Int { store.categories.filter { $0.type == .income }.count }
+
     var body: some View {
         NavigationView {
             Form {
-                Section(header: Text("支出项目")) {
-                    ForEach(store.categories.filter { $0.type == .expense }) { c in
-                        Text(c.name)
-                            .modifier(ItemSwipeActions(
-                                delete: { store.deleteCategory(c) },
-                                rename: { beginRename(.category(c)) }
-                            ))
-                    }
-                    HStack {
-                        TextField("新增支出项目", text: $newExpense)
-                        Button("添加") {
+                // 三个大类收进同一个分组，每个分组一个可折叠的头，默认全部收起
+                Section(header: Text("分类管理"),
+                        footer: Text("点开分组可查看、重命名或删除项目。在记账弹窗里现场输入的自定义项目，会随该笔账单保存后自动归到这里。")) {
+                    groupHeader("支出项目", count: expenseCount, isExpanded: $expenseExpanded)
+                    if expenseExpanded {
+                        categoryRows(type: .expense)
+                        addRow(placeholder: "新增支出项目", text: $newExpense) {
                             store.addCategory(name: newExpense, type: .expense)
                             newExpense = ""
                         }
-                        .disabled(newExpense.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
-                }
 
-                Section(header: Text("收入项目")) {
-                    ForEach(store.categories.filter { $0.type == .income }) { c in
-                        Text(c.name)
-                            .modifier(ItemSwipeActions(
-                                delete: { store.deleteCategory(c) },
-                                rename: { beginRename(.category(c)) }
-                            ))
-                    }
-                    HStack {
-                        TextField("新增收入项目", text: $newIncome)
-                        Button("添加") {
+                    groupHeader("收入项目", count: incomeCount, isExpanded: $incomeExpanded)
+                    if incomeExpanded {
+                        categoryRows(type: .income)
+                        addRow(placeholder: "新增收入项目", text: $newIncome) {
                             store.addCategory(name: newIncome, type: .income)
                             newIncome = ""
                         }
-                        .disabled(newIncome.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
-                }
 
-                Section(header: Text("支付方式")) {
-                    ForEach(store.paymentMethods) { m in
-                        Text(m.name)
-                            .modifier(ItemSwipeActions(
-                                delete: { store.deletePaymentMethod(m) },
-                                rename: { beginRename(.payment(m)) }
-                            ))
-                    }
-                    HStack {
-                        TextField("新增支付方式", text: $newPayment)
-                        Button("添加") {
+                    groupHeader("支付方式", count: store.paymentMethods.count,
+                                isExpanded: $paymentExpanded)
+                    if paymentExpanded {
+                        ForEach(store.paymentMethods) { m in
+                            Text(m.name)
+                                .modifier(ItemSwipeActions(
+                                    delete: { store.deletePaymentMethod(m) },
+                                    rename: { beginRename(.payment(m)) }
+                                ))
+                        }
+                        addRow(placeholder: "新增支付方式", text: $newPayment) {
                             store.addPaymentMethod(name: newPayment)
                             newPayment = ""
                         }
-                        .disabled(newPayment.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
                 }
 
@@ -186,6 +178,51 @@ struct SettingsView: View {
             } message: {
                 Text("自定义的项目与支付方式会被移除，已记录的账目不受影响。")
             }
+        }
+    }
+
+    /// 折叠分组头：本身仍是 Form 里的一行，展开的项目行保持 List 上下文，
+    /// 因此左滑重命名 / 删除照常生效。
+    private func groupHeader(_ title: String, count: Int,
+                             isExpanded: Binding<Bool>) -> some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                isExpanded.wrappedValue.toggle()
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: isExpanded.wrappedValue
+                      ? "chevron.down.circle.fill" : "chevron.right.circle.fill")
+                    .foregroundColor(.accentColor)
+                    .imageScale(.small)
+                Text(title).foregroundColor(.primary)
+                Spacer(minLength: 8)
+                Text("\(count) 项")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding(.vertical, 5)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func categoryRows(type: RecordType) -> some View {
+        ForEach(store.categories.filter { $0.type == type }) { c in
+            Text(c.name)
+                .modifier(ItemSwipeActions(
+                    delete: { store.deleteCategory(c) },
+                    rename: { beginRename(.category(c)) }
+                ))
+        }
+    }
+
+    private func addRow(placeholder: String, text: Binding<String>,
+                        action: @escaping () -> Void) -> some View {
+        HStack {
+            TextField(placeholder, text: text)
+            Button("添加", action: action)
+                .disabled(text.wrappedValue.trimmingCharacters(in: .whitespaces).isEmpty)
         }
     }
 

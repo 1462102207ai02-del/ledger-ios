@@ -73,6 +73,22 @@ final class DataStore: ObservableObject {
         persist()
     }
 
+    /// 把记账弹窗里现场输入的自定义项目收编进对应分组。
+    /// 只改内存、不单独写盘：调用方紧接着 addRecord / updateRecord 会触发一次 persist，
+    /// 于是「保存账单」和「新增项目」是同一次落库；取消记账不会留下孤立项目。
+    /// 已存在的同名项目自动跳过，天然去重；项目归属按当前账单的收支类型区分。
+    func absorbCustomSelections(categoryName: String, type: RecordType,
+                                paymentName: String) {
+        let c = categoryName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let p = paymentName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !c.isEmpty && !categories.contains(where: { $0.type == type && $0.name == c }) {
+            categories.append(Category(name: c, type: type, icon: "🧾"))
+        }
+        if !p.isEmpty && !paymentMethods.contains(where: { $0.name == p }) {
+            paymentMethods.append(PaymentMethod(name: p, icon: "💳"))
+        }
+    }
+
     func deleteRecord(_ record: Transaction) {
         records.removeAll { $0.id == record.id }
         persist()

@@ -278,7 +278,8 @@ struct RecordEditorView: View {
                     }
                 }
 
-                Section(header: Text("项目")) {
+                Section(header: Text("项目"),
+                        footer: Text("居中弹窗内可搜索，或现场输入自定义项目；保存后自动归组。")) {
                     pickerButton(title: categoryName,
                                  count: availableCategories.count,
                                  systemImage: "square.grid.2x2") {
@@ -340,22 +341,6 @@ struct RecordEditorView: View {
                     Button("关闭") { dismiss() }
                 }
             }
-            .sheet(item: $activePicker) { kind in
-                switch kind {
-                case .category:
-                    TiledPickerSheet(title: "选择项目",
-                                     options: availableCategories.map {
-                                         PickerOption(name: $0.name, icon: $0.icon)
-                                     },
-                                     selected: $categoryName)
-                case .payment:
-                    TiledPickerSheet(title: "选择支付方式",
-                                     options: store.paymentMethods.map {
-                                         PickerOption(name: $0.name, icon: $0.icon)
-                                     },
-                                     selected: $paymentName)
-                }
-            }
             .alert("删除这笔记录？", isPresented: $showDeleteConfirm) {
                 Button("取消", role: .cancel) {}
                 Button("删除", role: .destructive) {
@@ -366,6 +351,32 @@ struct RecordEditorView: View {
                 Text("删除后无法撤销。")
             }
         }
+        .overlay(pickerOverlay)
+    }
+
+    /// 半透明居中选择弹窗：与记一笔页共用同一个组件。
+    private var pickerOverlay: some View {
+        ZStack {
+            if let kind = activePicker {
+                switch kind {
+                case .category:
+                    CenteredPickerDialog(
+                        title: "选择项目",
+                        options: availableCategories.map { PickerOption(name: $0.name) },
+                        selected: $categoryName,
+                        onClose: { activePicker = nil }
+                    )
+                case .payment:
+                    CenteredPickerDialog(
+                        title: "选择支付方式",
+                        options: store.paymentMethods.map { PickerOption(name: $0.name) },
+                        selected: $paymentName,
+                        onClose: { activePicker = nil }
+                    )
+                }
+            }
+        }
+        .animation(.easeInOut(duration: 0.18), value: activePicker != nil)
     }
 
     private func pickerButton(title: String, count: Int, systemImage: String,
@@ -396,6 +407,9 @@ struct RecordEditorView: View {
 
     private func save() {
         guard canSave else { return }
+        // 现场输入的自定义项目，随这次修改一起落库到对应分组
+        store.absorbCustomSelections(categoryName: categoryName, type: type,
+                                     paymentName: paymentName)
         let updated = Transaction(
             id: original.id,
             type: type,
