@@ -1,6 +1,9 @@
 import SwiftUI
 import Foundation
 
+/// 明细页查看范围。保留 Int rawValue 供 SceneStorage 持久化：
+/// iOS 15 下 TabView 切换 / 键盘弹出会重建视图层级，普通 @State 会被重置，
+/// 用户选好的「按日期 + 某一天」不该因为切个页面就丢。与记一笔页的草稿策略一致。
 private enum RecordsFilter: Int {
     case all = 0
     case day = 1
@@ -15,9 +18,31 @@ private struct RecordGroup: Identifiable {
 struct RecordsView: View {
     @EnvironmentObject var store: DataStore
 
-    @State private var filterMode: RecordsFilter = .all
-    @State private var selectedDay = Date()
+    /// 筛选范围与所选日期用 SceneStorage 持久化，避免 iOS 15 视图重建时被重置回默认。
+    /// Date 不能直接存 SceneStorage，改存时间戳；0 表示「尚未选择，默认今天」。
+    @SceneStorage("ledger.records.filter") private var filterRaw: Int = RecordsFilter.all.rawValue
+    @SceneStorage("ledger.records.dayStamp") private var selectedDayStamp: Double = 0
     @State private var editingRecord: Transaction?
+
+    private var filterMode: RecordsFilter {
+        RecordsFilter(rawValue: filterRaw) ?? .all
+    }
+
+    private var filterBinding: Binding<RecordsFilter> {
+        Binding(get: { RecordsFilter(rawValue: filterRaw) ?? .all },
+                set: { filterRaw = $0.rawValue })
+    }
+
+    private var selectedDay: Date {
+        selectedDayStamp == 0 ? Date() : Date(timeIntervalSinceReferenceDate: selectedDayStamp)
+    }
+
+    private var selectedDayBinding: Binding<Date> {
+        Binding(
+            get: { selectedDayStamp == 0 ? Date() : Date(timeIntervalSinceReferenceDate: selectedDayStamp) },
+            set: { selectedDayStamp = $0.timeIntervalSinceReferenceDate }
+        )
+    }
 
     private var filteredRecords: [Transaction] {
         switch filterMode {
@@ -47,6 +72,13 @@ struct RecordsView: View {
         }
     }
 
+    private static let dayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "zh_CN")
+        f.dateFormat = "M月d日 EEEE"
+        return f
+    }()
+
     private func dayTitle(_ date: Date) -> String {
         let cal = Calendar.current
         if cal.isDateInToday(date) { return "今天 · " + shortDay(date) }
@@ -55,25 +87,42 @@ struct RecordsView: View {
     }
 
     private func shortDay(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "zh_CN")
-        f.dateFormat = "M月d日 EEEE"
-        return f.string(from: date)
+        Self.dayFormatter.string(from: date)
     }
 
-    private var todayRecords: [Transaction] {
-        store.records.filter { Calendar.current.isDateInToday($0.date) }
+    // MARK: - 汇总（跟随筛选范围）
+
+    /// 全部记录模式显示「今日」速览；按日期模式显示所选那一整天。
+    /// 标题始终准确标注数据来源，不再出现「写着今日、明细却是别的日期」的误导。
+    private var summaryRecords: [Transaction] {
+        switch filterMode {
+        case .all:
+            return store.records.filter { Calendar.current.isDateInToday($0.date) }
+        case .day:
+            return filteredRecords
+        }
     }
 
-    private var todayExpense: Double { Money.double(Money.sum(todayRecords, type: .expense)) }
-    private var todayIncome: Double { Money.double(Money.sum(todayRecords, type: .income)) }
-    private var todayNet: Double { todayIncome - todayExpense }
+    private var summaryTitle: String {
+        switch filterMode {
+        case .all: return "今日"
+        case .day:
+            let cal = Calendar.current
+            if cal.isDateInToday(selectedDay) { return "今天" }
+            if cal.isDateInYesterday(selectedDay) { return "昨天" }
+            return shortDay(selectedDay)
+        }
+    }
+
+    private var summaryExpense: Decimal { Money.sum(summaryRecords, type: .expense) }
+    private var summaryIncome: Decimal { Money.sum(summaryRecords, type: .income) }
+    private var summaryBalance: Decimal { summaryIncome - summaryExpense }
 
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
-                todaySummary
                 filterBar
+                if !sortedRecords.isEmpty { summaryCard }
 
                 if sortedRecords.isEmpty {
                     VStack(spacing: 12) {
@@ -114,73 +163,54 @@ struct RecordsView: View {
         }
     }
 
-    private var todaySummary: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("今日").font(.headline)
-
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(todayNet >= 0 ? "总收入" : "总支出")
-                    .font(.subheadline)
+    /// 紧凑的三列小计：支出 / 收入 / 结余，与统计页共用同一套视觉语言。
+    /// 位置放在筛选栏下方、明细列表上方，形成「选范围 → 看小计 → 看流水」的从属关系；
+    /// 始终可见、不随列表滚走，也不挤占明细行。
+    /// 数值一律走 Decimal 求和，结余是真实的「收入 − 支出」，不再拿净额冒充「总收入/总支出」。
+    private var summaryCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(summaryTitle).font(.headline)
+                Spacer()
+                Text("\(summaryRecords.count) 条")
+                    .font(.caption)
                     .foregroundColor(.secondary)
-                Text(Money.string(abs(todayNet)))
-                    .font(.system(size: 30, weight: .bold, design: .rounded))
-                    .foregroundColor(todayNet >= 0 ? .green : .red)
-                    .minimumScaleFactor(0.7)
-                    .lineLimit(1)
             }
-
-            Divider()
-
-            HStack(spacing: 0) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("支出").font(.caption).foregroundColor(.secondary)
-                    Text(Money.string(todayExpense))
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(.red)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("收入").font(.caption).foregroundColor(.secondary)
-                    Text(Money.string(todayIncome))
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(.green)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+            HStack {
+                StatColumn(title: "支出", value: Money.string(summaryExpense), color: .red)
+                Divider().frame(height: 30)
+                StatColumn(title: "收入", value: Money.string(summaryIncome), color: .green)
+                Divider().frame(height: 30)
+                StatColumn(title: "结余", value: Money.string(summaryBalance),
+                           color: Money.double(summaryBalance) < 0 ? .red : .green)
             }
         }
-        .padding(16)
+        .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(Color(.systemGray6))
         )
         .padding(.horizontal, 16)
-        .padding(.top, 12)
-        .padding(.bottom, 8)
+        .padding(.bottom, 10)
     }
 
     private var filterBar: some View {
         VStack(spacing: 8) {
-            Picker("查看范围", selection: $filterMode) {
+            Picker("查看范围", selection: filterBinding) {
                 Text("全部记录").tag(RecordsFilter.all)
                 Text("按日期").tag(RecordsFilter.day)
             }
             .pickerStyle(.segmented)
 
             if filterMode == .day {
-                HStack {
-                    DatePicker("选择日期", selection: $selectedDay,
-                               displayedComponents: [.date])
-                        .datePickerStyle(.compact)
-                        .environment(\.locale, Locale(identifier: "zh_CN"))
-                    Spacer()
-                    Text("\(filteredRecords.count) 条")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
+                DatePicker("选择日期", selection: selectedDayBinding,
+                           displayedComponents: [.date])
+                    .datePickerStyle(.compact)
+                    .environment(\.locale, Locale(identifier: "zh_CN"))
             }
         }
         .padding(.horizontal, 16)
+        .padding(.top, 12)
         .padding(.bottom, 8)
     }
 }
@@ -217,11 +247,15 @@ private struct RecordRow: View {
         .contentShape(Rectangle())
     }
 
-    private func formatDate(_ d: Date) -> String {
+    private static let timeFormatter: DateFormatter = {
         let f = DateFormatter()
         f.locale = Locale(identifier: "zh_CN")
         f.dateFormat = "M/d HH:mm"
-        return f.string(from: d)
+        return f
+    }()
+
+    private func formatDate(_ d: Date) -> String {
+        Self.timeFormatter.string(from: d)
     }
 }
 
@@ -251,6 +285,19 @@ struct RecordEditorView: View {
         _note = State(initialValue: record.note)
     }
 
+    /// 与记一笔页一致：用 Binding setter 处理收支类型切换，相同值直接忽略，
+    /// 避免 .onChange(of:) 在视图重建 / Picker 重新绑定时误把项目重置成第一项。
+    private var typeBinding: Binding<RecordType> {
+        Binding(
+            get: { type },
+            set: { newType in
+                guard newType != type else { return }
+                type = newType
+                categoryName = store.categories.first { $0.type == newType }?.name ?? ""
+            }
+        )
+    }
+
     private var availableCategories: [Category] {
         store.categories.filter { $0.type == type }
     }
@@ -267,15 +314,12 @@ struct RecordEditorView: View {
         NavigationView {
             Form {
                 Section(header: Text("类型")) {
-                    Picker("类型", selection: $type) {
+                    Picker("类型", selection: typeBinding) {
                         ForEach(RecordType.allCases) { t in
                             Text(t.rawValue).tag(t)
                         }
                     }
                     .pickerStyle(.segmented)
-                    .onChange(of: type) { newValue in
-                        categoryName = store.categories.first { $0.type == newValue }?.name ?? ""
-                    }
                 }
 
                 Section(header: Text("项目"),

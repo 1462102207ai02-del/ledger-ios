@@ -442,7 +442,8 @@ struct StatisticsView: View {
     }
 }
 
-private struct StatColumn: View {
+/// 统计页与明细页共用的三列小计单元（同 target 内复用，避免两处各写一份）。
+struct StatColumn: View {
     let title: String
     let value: String
     let color: Color

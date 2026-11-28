@@ -22,6 +22,15 @@ enum PickerKind: Identifiable {
     }
 }
 
+// MARK: - 紧凑表单行
+/// 记一笔页的 Form 行统一收紧上下内边距，让整张表单（含底部的保存按钮）
+/// 能落在底栏之上完整显示，不必滚动到底才看得见「保存」。
+private extension View {
+    func compactRow() -> some View {
+        listRowInsets(EdgeInsets(top: 3, leading: 16, bottom: 3, trailing: 16))
+    }
+}
+
 // MARK: - 选择入口按钮（记一笔页与编辑记录页共用）
 /// 表单里的一行入口：显示当前选中项与可选项目数，点按弹出居中选择器。
 struct PickerEntryButton: View {
@@ -46,7 +55,7 @@ struct PickerEntryButton: View {
                     .foregroundColor(.secondary)
                     .imageScale(.small)
             }
-            .padding(.vertical, 10)
+            .padding(.vertical, 8)
             .padding(.horizontal, 12)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -310,15 +319,16 @@ struct AddRecordView: View {
                         }
                     }
                     .pickerStyle(.segmented)
+                    .compactRow()
                 }
 
-                Section(header: Text(type == .expense ? "支出项目" : "收入项目"),
-                        footer: Text(type == .expense ? "点击选择或输入对应的支出项目" : "点击选择或输入对应的收入项目")) {
+                Section(header: Text(type == .expense ? "支出项目" : "收入项目")) {
                     PickerEntryButton(title: categoryName,
                                       count: availableCategories.count,
                                       systemImage: "square.grid.2x2") {
                         activePicker = .category
                     }
+                    .compactRow()
                 }
 
                 Section(header: Text("金额")) {
@@ -328,25 +338,28 @@ struct AddRecordView: View {
                             .keyboardType(.decimalPad)
                             .focused($amountFocused)
                     }
+                    .compactRow()
                 }
 
-                Section(header: Text("支付方式"),
-                        footer: Text("点击选择或输入对应的支付方式")) {
+                Section(header: Text("支付方式")) {
                     PickerEntryButton(title: paymentName,
                                       count: store.paymentMethods.count,
                                       systemImage: "creditcard") {
                         activePicker = .payment
                     }
+                    .compactRow()
                 }
 
                 Section(header: Text("日期时间")) {
                     DatePicker("日期时间", selection: $date,
                                displayedComponents: [.date, .hourAndMinute])
                         .environment(\.locale, Locale(identifier: "zh_CN"))
+                        .compactRow()
                 }
 
                 Section(header: Text("备注")) {
                     TextField("说点什么…", text: $note)
+                        .compactRow()
                 }
 
                 Section {
@@ -358,8 +371,12 @@ struct AddRecordView: View {
                         }
                     }
                     .disabled(!canSave)
+                    .compactRow()
                 }
             }
+            // 行最小高度 44 → 36，配合上面的紧凑内边距把整张表单压进一屏，
+            // 保存按钮不再被推到底栏之下。iOS 15 无 listSectionSpacing，用这个环境值最稳。
+            .environment(\.defaultMinListRowHeight, 36)
             .dismissKeyboardOnTap()
             .navigationTitle("记一笔")
             .onAppear {

@@ -85,8 +85,9 @@ struct LedgerWidgetView: View {
         .widgetURL(URL(string: "ledger://add"))
     }
 
-    // 今日大字：净额，正数绿「总收入」，负数红「总支出」
-    private var netTitle: String { entry.todayNet >= 0 ? "总收入" : "总支出" }
+    // 今日大字是「收入 − 支出」的净额，标签统一写「结余」，
+    // 不再拿净额冒充「总收入 / 总支出」（主 App 明细页此前也有同样的误标）。
+    private let netLabel = "结余"
     private var netColor: Color { entry.todayNet >= 0 ? .green : .red }
 
     private var addHint: some View {
@@ -104,10 +105,10 @@ struct LedgerWidgetView: View {
                     Spacer(minLength: 2)
                     addHint
                 }
-                Text(netTitle)
+                Text(netLabel)
                     .font(.caption2)
                     .foregroundColor(.secondary)
-                Text(money(abs(entry.todayNet)))
+                Text(money(entry.todayNet))
                     .font(.system(size: 25, weight: .bold))
                     .foregroundColor(netColor)
                     .minimumScaleFactor(0.7)
@@ -128,7 +129,7 @@ struct LedgerWidgetView: View {
 
     private var mediumView: some View {
         HStack(spacing: 14) {
-            // 左：今日（大标题）+ 总支出（小标题）两行；金额垂直居中于左区
+            // 左：今日 + 结余大字两行；金额垂直居中于左区
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
                     Text("今日")
@@ -136,10 +137,10 @@ struct LedgerWidgetView: View {
                     Spacer(minLength: 2)
                     addHint
                 }
-                Text(netTitle)
+                Text(netLabel)
                     .font(.caption2)
                     .foregroundColor(.secondary)
-                Text(money(abs(entry.todayNet)))
+                Text(money(entry.todayNet))
                     .font(.system(size: 24, weight: .bold))
                     .foregroundColor(netColor)
                     .minimumScaleFactor(0.7)
@@ -212,8 +213,8 @@ struct LedgerWidgetView: View {
                     .minimumScaleFactor(0.75)
                 }
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(netTitle).font(.subheadline).foregroundColor(.secondary)
-                    Text(money(abs(entry.todayNet)))
+                    Text(netLabel).font(.subheadline).foregroundColor(.secondary)
+                    Text(money(entry.todayNet))
                         .font(.system(size: 30, weight: .bold)) // 系统原生字体
                         .foregroundColor(netColor)
                         .minimumScaleFactor(0.7)
