@@ -3,8 +3,10 @@ import Foundation
 
 // MARK: - 平铺选择器的通用类型（记一笔页与编辑页共用）
 /// 纯文字选项。
+/// id 用项目名而不是每次新建的 UUID：选项数组是计算属性，父视图每次刷新都会重新生成，
+/// 若 id 每次都变，LazyVGrid 的所有 cell 身份会全部失效并被重建，选中态与点击容易错乱。
 struct PickerOption: Identifiable, Hashable {
-    let id = UUID()
+    var id: String { name }
     let name: String
 }
 
@@ -175,7 +177,7 @@ struct CenteredPickerDialog: View {
                 .padding(.vertical, 30)
             } else {
                 LazyVGrid(columns: columns, spacing: 8) {
-                    ForEach(filtered) { option in
+                    ForEach(filtered, id: \.name) { option in
                         Button {
                             selected = option.name
                             onClose()
@@ -246,10 +248,15 @@ struct AddRecordView: View {
     /// 由 ContentView 传入：小组件跳转时递增，用于自动聚焦金额。
     let focusToken: Int
 
-    @State private var type: RecordType = .expense
-    @State private var categoryName = ""
+    /// 表单草稿用 SceneStorage 而不是普通 @State。
+    /// iOS 15 下键盘弹出 / TabView 重排会重建视图层级，@State 可能被重置成初始值，
+    /// 于是刚选好的支出项目会被 setupDefaults() 重新填成列表第一项 —— 就是「自己跳到别的项」。
+    /// SceneStorage 由系统在场景级保存，视图重建后自动恢复，不随 @State 一起被重置。
+    @SceneStorage("ledger.add.type") private var typeRaw: String = RecordType.expense.rawValue
+    @SceneStorage("ledger.add.category") private var categoryName: String = ""
+    @SceneStorage("ledger.add.payment") private var paymentName: String = ""
+
     @State private var amountText = ""
-    @State private var paymentName = ""
     @State private var date = Date()
     @State private var note = ""
     @State private var showSaved = false
@@ -257,6 +264,21 @@ struct AddRecordView: View {
     @State private var activePicker: PickerKind?
 
     @FocusState private var amountFocused: Bool
+
+    private var type: RecordType { RecordType(rawValue: typeRaw) ?? .expense }
+
+    /// 只在真正切换收支类型时才把项目换成新类型的第一项；
+    /// 相同值直接忽略，避免 Picker 在视图重建时重新绑定 selection 造成误触发。
+    private var typeBinding: Binding<RecordType> {
+        Binding(
+            get: { RecordType(rawValue: typeRaw) ?? .expense },
+            set: { newType in
+                guard newType != type else { return }
+                typeRaw = newType.rawValue
+                categoryName = store.categories.first { $0.type == newType }?.name ?? ""
+            }
+        )
+    }
 
     private var availableCategories: [Category] {
         store.categories.filter { $0.type == type }
@@ -282,15 +304,12 @@ struct AddRecordView: View {
         NavigationView {
             Form {
                 Section(header: Text("类型")) {
-                    Picker("类型", selection: $type) {
+                    Picker("类型", selection: typeBinding) {
                         ForEach(RecordType.allCases) { t in
                             Text(t.rawValue).tag(t)
                         }
                     }
                     .pickerStyle(.segmented)
-                    .onChange(of: type) { newValue in
-                        categoryName = store.categories.first { $0.type == newValue }?.name ?? ""
-                    }
                 }
 
                 Section(header: Text(type == .expense ? "支出项目" : "收入项目"),
