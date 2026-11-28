@@ -83,6 +83,28 @@ TrollStore 之所以正常，是因为它走 CoreTrust **绕过 provisioning pro
 | 付费账号 + 精确 App ID | 需为 `.widget` 单独建 App ID / profile，或让工具自动改写扩展 Bundle ID |
 | 工具会跳过 / 自动删除 `PlugIns`（如勾了 "Remove App Extensions"） | 关掉该选项或换工具（Sideloadly / AltStore / Feather / ESign 高级模式） |
 
+### 全能签 / 手机端签名器专项（本次实测工具）
+
+全能签、轻松签这类**手机端签名器**是 iOS 自签圈最常见的工具，也是本次实测用的工具。它们有三个与 appex 天然冲突的默认行为：
+
+1. **改写主 App Bundle ID**：教程里多开操作是「在原有标识符后面随便加数字或字母」。但 iOS 要求**扩展的 Bundle ID 必须是主 App ID 的前缀子域**。主 App 一旦被改成 `com.mazexin.Bookkeeping.1` 或描述文件里的另一个 ID，`com.mazexin.Bookkeeping.widget` 就不再是它的子域 → `installd` 判死。
+2. **只签主 App、不递归签 `PlugIns`**：手机端签名器多数按「单主包 + 注入 dylib / 多开」设计。对照物是桌面端 EasySign，其重签流程里明确有独立一步「重签 Appex」——说明这需要工具专门支持，不是默认行为。
+3. **要求精确 Bundle ID**：公开教程写「全能签的 Bundle ID 输入框不支持通配符 `*`、必须与证书绑定的 App ID 完全一致」。这类证书多为**精确 App ID**（常见于带推送能力的个人证书），天生不覆盖 `.widget`。
+
+因此在全能签里签主包时，请**不要改 Bundle Identifier、不要开多开**，并确认有没有「签名扩展 / 保留插件」之类开关。若它没有递归签 appex 的能力，带小组件的包在这套工具下就装不上——这是工具能力边界，不是包能修的。
+
+另一条工具线是 **LC（LiveContainer）**：它把 IPA 放在自己的容器里「免安装运行」，靠内置 ZSign 用容器证书重签，绕开免费账号的 3 App / 10 App ID 限制。但官方文档明确列出限制：**不支持小组件或其他 App 扩展**——因为 SpringBoard 不知道容器里装了哪些 App，扩展根本无法注册。所以在 LC 里跑这个包，小组件在架构上就不存在；它只能作为「先用起来」的运行环境，不是保留小组件的路线。
+
+### 一步定性：检查你的描述文件是通配符还是精确 ID
+
+`scripts/inspect-profile.py` 直接读 `.mobileprovision`（或证书 zip / 目录），输出 App ID 类型、Team ID、entitlements、有效期、UDID 列表，并给出「能不能签带 appex 的包」的结论。纯 Python 标准库，无需 openssl：
+
+```bash
+python scripts/inspect-profile.py C:/Users/Administrator/Desktop/证书.zip
+```
+
+也可以把文件放到桌面后把路径告诉我，我来跑。判断依据：描述文件 `Entitlements` → `application-identifier`，去掉 `TeamID.` 前缀后若含 `*` 就是通配符。
+
 ### 小组件数据怎么传（不再硬依赖 App Group）
 
 | 优先级 | 通道 | 生效条件 | 说明 |
@@ -105,11 +127,12 @@ TrollStore 之所以正常，是因为它走 CoreTrust **绕过 provisioning pro
 ### p12 自签安装与验证清单
 
 1. ✅ **A/B 已完成（用户真机验证）**：`快捷记账-无小组件-诊断用.ipa` 用同一套 p12 / 同一工具 / 同一设备**签名安装成功** → 根因确诊为 appex，主 App 与证书全部清白。
-2. 现在设备上装的是 **p12 签的无组件版**。后续用同一套 p12 重签主包覆盖安装，签名身份一致，原则上**不需要再卸载**；若覆盖失败再卸载重试。
-3. 要保留小组件：换**通配符 App ID** 的 profile，并确认工具**递归重签全部 `PlugIns`**（Sideloadly / AltStore / Feather / ESign 高级模式）。主 App 与扩展必须同一个 Team。
-4. 若工具支持自定义 entitlements，可给主 App 与 widget **注入同一个 App Group**（名字任意），App 会自动识别并使用，小组件数据最完整。
-5. 装好后**先打开一次主 App**，让 Keychain 快照写入；再添加 / 刷新小组件。
-6. 若仍失败，记录工具名称与具体报错（`0xE8008016` invalid entitlements / `0xE8008015` / `ApplicationVerificationFailed` 等）。
+2. **先跑一次描述文件定性**（30 秒，不用上机）：`python scripts/inspect-profile.py <证书.zip 或 .mobileprovision>`。看 App ID 是通配符还是精确 ID —— 这一项决定后面所有分支。
+3. 现在设备上装的是 **p12 签的无组件版**。后续用同一套 p12 重签主包覆盖安装，签名身份一致，原则上**不需要再卸载**；若覆盖失败再卸载重试。
+4. 要保留小组件：换**通配符 App ID** 的 profile，并确认工具**递归重签全部 `PlugIns`**（Sideloadly / AltStore / Feather / ESign 高级模式）。主 App 与扩展必须同一个 Team。**全能签签名时不要改 Bundle Identifier、不要开多开**。
+5. 若工具支持自定义 entitlements，可给主 App 与 widget **注入同一个 App Group**（名字任意），App 会自动识别并使用，小组件数据最完整。
+6. 装好后**先打开一次主 App**，让 Keychain 快照写入；再添加 / 刷新小组件。
+7. 若仍失败，记录工具名称与具体报错（`0xE8008016` invalid entitlements / `0xE8008015` / `ApplicationVerificationFailed` 等）。
 
 > **最坏情况已经可用**：桌面 `快捷记账-无小组件-诊断用.ipa` 可直接当作自签正式包（主 App 全部功能在，仅无桌面小组件）；TrollStore 继续用 `快捷记账.ipa`（带小组件）。这是按「能力」分两个包，与早期按签名方式乱拆三个包不是一回事。
 >
