@@ -50,17 +50,19 @@ Bundle ID：`com.mazexin.Bookkeeping`。签名保持干净，不含任何受限 
 
 ### 为什么 p12 自签报「无法安装，请稍后再试」
 
-这个提示是 iOS 最泛化的安装失败文案，不含错误码，说明校验在早期就被拒。按概率排列：
+这个提示是 iOS 最泛化的安装失败文案，不含错误码，说明校验在早期就被拒。**实测 A/B 对照「TrollStore 正常 / 自签装不上」本身就是最强线索**：同一个包、同一台设备，差异只能来自两条安装路径的校验规则不同，而不可能是 Swift 代码——安装阶段根本不执行代码。
 
 | # | 原因 | 归属 | 处理 |
 | --- | --- | --- | --- |
-| 1 | 设备上已装过**同一 Bundle ID 的旧版**（通常是 TrollStore 版），新包换成 p12 证书 → 签名身份（Team ID）不同，iOS 拒绝覆盖 | 设备侧 | **先卸载旧的「快捷记账」再装**。切换签名类型时这是硬性前提 |
-| 2 | 旧版把受限 entitlement `com.apple.security.application-groups` 硬写进签名，profile 不带同名 App Group → 「entitlement 未被 profile 授权」 | 包侧 | 已修复：签名里彻底没有这个键；App Group 改为运行时动态发现 |
-| 3 | 只用 `ldid -S` 签二进制，不生成 `_CodeSignature/CodeResources` 资源 seal → 标准 `installd` 校验失败（TrollStore 靠 CoreTrust 不校验 seal，所以旧包只有它能装） | 包侧 | 已修复：改用 `codesign -s -`，先签 appex 再签主 App，生成完整 seal |
-| 4 | profile 的 App ID 不覆盖 `com.mazexin.Bookkeeping.widget`，或重签工具跳过 `PlugIns` | 工具侧 | 用通配符 App ID / 支持 appex 重签的工具 |
+| 1 | **包内含 `PlugIns/LedgerWidget.appex`，它是独立签名实体**：有自己的 Bundle ID `com.mazexin.Bookkeeping.widget`、自己的签名、自己的 entitlements。标准 `installd` 要求每个 app extension **各有一份匹配的 provisioning profile**；主 App 用精确 App ID 的 profile 只授权 `com.mazexin.Bookkeeping`，扩展不在范围内 → `0xE8008016` invalid entitlements → 手机显示「无法安装，请稍后再试」。TrollStore 走 CoreTrust 绕过 profile 校验，appex 有没有 profile 都放行，所以只有它能装 | 包结构 + 工具 | 用支持**递归签全部 `PlugIns`** 的工具 + 通配符 App ID；或先用无小组件对照包做 A/B 定性 |
+| 2 | 设备上已装过**同一 Bundle ID 的旧版**（通常是 TrollStore 版），新包换成 p12 证书 → 签名身份（Team ID）不同，iOS 拒绝覆盖 | 设备侧 | **先卸载旧的「快捷记账」再装** |
+| 3 | 旧版把受限 entitlement `com.apple.security.application-groups` 硬写进签名，profile 不带同名 App Group | 包侧 | 已修复：签名里彻底没有这个键；App Group 改为运行时动态发现 |
+| 4 | 只用 `ldid -S` 签二进制，不生成 `_CodeSignature/CodeResources` 资源 seal | 包侧 | 已修复：改用 `codesign -s -`，先签 appex 再签主 App |
 | 5 | 证书过期 / 被吊销 / 设备 UDID 不在 profile / 设备时间不准 / iOS 16+ 未开开发者模式 | 账号设备侧 | 逐项核对 |
 
-> **包侧修复不能替代第 1 步。** 只要旧版还在设备上，换签名身份的新包就装不上。另注：包里二进制的 `__entitlements` 段为空（连 `application-identifier` 都没有），重签工具必须**自己从 profile 生成整套权限集**；若工具只会「沿用原 entitlements」，需换一个会完整重签的工具。
+> **硬约束**：免费个人 Apple ID 签发的 p12 **不允许签 App Extension**（Apple 账号能力限制，与打包方式无关）。若证书属于这一类，「一个包同时让 TrollStore 和自签都带小组件」物理上无法同时满足，只能二选一。
+>
+> 拆包事实：主 App 与 appex 二进制的 `__entitlements` 段**都为空**（连 `application-identifier` 都没有），整个 IPA **不含任何 `embedded.mobileprovision`**。重签工具必须自己从 profile 生成**两套**完整权限集并分别签名；只会「沿用原 entitlements」或只签主 App 的工具必然失败。这不是 Widget 代码问题，Widget 侧也未调用任何 `NS_EXTENSION_UNAVAILABLE` API。
 
 ### 小组件数据怎么传（不再硬依赖 App Group）
 
@@ -78,16 +80,21 @@ Bundle ID：`com.mazexin.Bookkeeping`。签名保持干净，不含任何受限 
 | 安装方式 | 签名 | 主 App 功能 | 小组件 |
 | --- | --- | --- | --- |
 | TrollStore / TrollFools | 包内纯净 ad-hoc 签名 | 全部 | 有；共享容器 / Keychain 任一可用即完整显示 |
-| 真证书自签 | 工具重签覆盖 | 全部（同一份代码） | 有；不再因受限 entitlement 安装失败 |
+| 真证书自签（付费账号 + 递归签 appex） | 工具重签覆盖 | 全部（同一份代码） | 有 |
+| 真证书自签（免费个人账号 / 只签主 App 的工具） | 工具重签覆盖 | **可能装不上** | 需去掉 `PlugIns` 才能装，装了也没小组件 |
 
 ### p12 自签安装与验证清单
 
-0. **先卸载设备上已有的「快捷记账」**（尤其是 TrollStore 版）。同一 Bundle ID 换签名身份无法覆盖安装，这是「无法安装，请稍后再试」最常见的原因。
-1. 用**支持 `PlugIns` appex 重签、且会从 profile 生成完整 entitlements** 的工具（ESign / Feather / Sideloadly / AltStore 等）。若工具会跳过插件，小组件自然不会出现。
-2. profile 的 App ID 需能覆盖 `com.mazexin.Bookkeeping.widget`；用通配符 App ID，或让工具自动改写 appex 的 Bundle ID。Bundle ID 与 profile 不匹配是另一类常见安装失败。
+0. **先卸载设备上已有的「快捷记账」**（尤其是 TrollStore 版）。同一 Bundle ID 换签名身份无法覆盖安装。
+1. **先用一次 A/B 定性**：拿桌面上的 `快捷记账-无小组件-诊断用.ipa` 重签，它与主包唯一差别是删掉了 `PlugIns` 与旧的资源 seal。
+   - 装上 → 根因**确认是 appex**，主 App 签名/证书/设备都没问题，往第 2 步走。
+   - 仍装不上 → 根因在证书、设备 UDID、开发者模式或设备残留，与打包无关。
+2. 要保留小组件，必须用**支持递归签全部 `PlugIns` 的工具**（Sideloadly / AltStore / Feather / ESign 高级模式），且 profile 用**通配符 App ID** 或让工具为 `com.mazexin.Bookkeeping.widget` 单独生成描述文件。主 App 与扩展必须是同一个 Team。
 3. 若工具支持自定义 entitlements，可给主 App 与 widget **注入同一个 App Group**（名字任意），App 会自动识别并使用，小组件数据最完整。
 4. 装好后**先打开一次主 App**，让 Keychain 快照写入；再添加 / 刷新小组件。
-5. 若仍安装失败，请记录工具名称与具体报错（`0xE8008015` / `ApplicationVerificationFailed` / entitlements 相关字样等），据此继续定位——这类信息与打包无关，需要真机日志才能定性。
+5. 若仍失败，记录工具名称与具体报错（`0xE8008016` invalid entitlements / `0xE8008015` / `ApplicationVerificationFailed` 等）。
+
+> 补充：`0xE8008016` 在带 Widget 的 IPA 上极常见，公开案例明确指出「扩展 target 用了另一个团队或缺少对应能力的描述文件」「第三方工具重签的包」是主因；免费个人账号则根本无法签 App Extension。
 
 构建流程：XcodeGen 生成工程 → xcodebuild 编译未签名 app → `codesign -s -` 先签 widget appex、再签主 App，生成完整 `_CodeSignature/CodeResources` 且不写任何 entitlement → CI 硬校验「两个 bundle 都有 seal」和「签名里不含 `com.apple.security.application-groups`」→ 打包成单个 IPA → 上传 artifact。取包也可直接跑 `bash scripts/fetch-ipa.sh [commit短sha]`，会把通用版放到桌面 `快捷记账.ipa`。
 
