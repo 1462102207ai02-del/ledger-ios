@@ -10,14 +10,27 @@ struct PickerOption: Identifiable, Hashable {
     let name: String
 }
 
+extension PickerOption {
+    /// 现场输入的自定义名称还没落库时也放进选项首位，
+    /// 避免再次打开弹窗时看不到当前选中态（记一笔页与编辑页共用）。
+    static func list(from names: [String], current: String) -> [PickerOption] {
+        var options = names.map { PickerOption(name: $0) }
+        if !current.isEmpty && !options.contains(where: { $0.name == current }) {
+            options.insert(PickerOption(name: current), at: 0)
+        }
+        return options
+    }
+}
+
 enum PickerKind: Identifiable {
     case category
-    case payment
+    /// 渠道选择器：标题、图标与选项由当前收支类型决定，不再写死成「支付方式」。
+    case method
 
     var id: String {
         switch self {
         case .category: return "category"
-        case .payment: return "payment"
+        case .method: return "method"
         }
     }
 }
@@ -263,7 +276,9 @@ struct AddRecordView: View {
     /// SceneStorage 由系统在场景级保存，视图重建后自动恢复，不随 @State 一起被重置。
     @SceneStorage("ledger.add.type") private var typeRaw: String = RecordType.expense.rawValue
     @SceneStorage("ledger.add.category") private var categoryName: String = ""
+    /// 支出与收入各记一个渠道草稿：切到「收入」不会把刚选好的支付方式顶掉，切回来也还在。
     @SceneStorage("ledger.add.payment") private var paymentName: String = ""
+    @SceneStorage("ledger.add.receipt") private var receiptName: String = ""
 
     @State private var amountText = ""
     @State private var date = Date()
@@ -278,6 +293,7 @@ struct AddRecordView: View {
 
     /// 只在真正切换收支类型时才把项目换成新类型的第一项；
     /// 相同值直接忽略，避免 Picker 在视图重建时重新绑定 selection 造成误触发。
+    /// 渠道草稿不做重置：两种类型各自记着自己的选择。
     private var typeBinding: Binding<RecordType> {
         Binding(
             get: { RecordType(rawValue: typeRaw) ?? .expense },
@@ -297,16 +313,35 @@ struct AddRecordView: View {
         Double(amountText.trimmingCharacters(in: .whitespaces)) ?? 0
     }
 
-    private var canSave: Bool {
-        amount > 0 && !categoryName.isEmpty && !paymentName.isEmpty
+    // MARK: 渠道（支付方式 / 收款方式）
+    private var methodTitle: String { type.methodGroup.title }
+
+    private var methodName: String { type == .expense ? paymentName : receiptName }
+
+    /// 选择弹窗统一绑到当前类型的那一份草稿，避免两个 SceneStorage 互相覆盖。
+    private var methodBinding: Binding<String> {
+        Binding(
+            get: { type == .expense ? paymentName : receiptName },
+            set: { newValue in
+                if type == .expense { paymentName = newValue } else { receiptName = newValue }
+            }
+        )
+    }
+
+    private var availableMethods: [PaymentMethod] {
+        store.methodList(type.methodGroup)
     }
 
     private var categoryOptions: [PickerOption] {
-        availableCategories.map { PickerOption(name: $0.name) }
+        PickerOption.list(from: availableCategories.map { $0.name }, current: categoryName)
     }
 
-    private var paymentOptions: [PickerOption] {
-        store.paymentMethods.map { PickerOption(name: $0.name) }
+    private var methodOptions: [PickerOption] {
+        PickerOption.list(from: availableMethods.map { $0.name }, current: methodName)
+    }
+
+    private var canSave: Bool {
+        amount > 0 && !categoryName.isEmpty && !methodName.isEmpty
     }
 
     var body: some View {
@@ -341,11 +376,11 @@ struct AddRecordView: View {
                     .compactRow()
                 }
 
-                Section(header: Text("支付方式")) {
-                    PickerEntryButton(title: paymentName,
-                                      count: store.paymentMethods.count,
-                                      systemImage: "creditcard") {
-                        activePicker = .payment
+                Section(header: Text(methodTitle)) {
+                    PickerEntryButton(title: methodName,
+                                      count: availableMethods.count,
+                                      systemImage: type.methodGroup.systemImage) {
+                        activePicker = .method
                     }
                     .compactRow()
                 }
@@ -405,11 +440,11 @@ struct AddRecordView: View {
                         selected: $categoryName,
                         onClose: { activePicker = nil }
                     )
-                case .payment:
+                case .method:
                     CenteredPickerDialog(
-                        title: "选择支付方式",
-                        options: paymentOptions,
-                        selected: $paymentName,
+                        title: "选择\(methodTitle)",
+                        options: methodOptions,
+                        selected: methodBinding,
                         onClose: { activePicker = nil }
                     )
                 }
@@ -423,7 +458,10 @@ struct AddRecordView: View {
             categoryName = availableCategories.first?.name ?? ""
         }
         if paymentName.isEmpty {
-            paymentName = store.paymentMethods.first?.name ?? ""
+            paymentName = store.methodList(.payment).first?.name ?? ""
+        }
+        if receiptName.isEmpty {
+            receiptName = store.methodList(.receipt).first?.name ?? ""
         }
     }
 
@@ -432,12 +470,12 @@ struct AddRecordView: View {
         // 弹窗里现场输入的自定义项目，随这笔账单一起落库到对应分组；
         // 取消记账不会留下孤立项目，已存在的同名项目也会自动跳过。
         store.absorbCustomSelections(categoryName: categoryName, type: type,
-                                     paymentName: paymentName)
+                                     methodName: methodName)
         let record = Transaction(
             type: type,
             categoryName: categoryName,
             amount: amount,
-            paymentMethodName: paymentName,
+            paymentMethodName: methodName,
             date: date,
             note: note.trimmingCharacters(in: .whitespacesAndNewlines)
         )
@@ -447,7 +485,7 @@ struct AddRecordView: View {
         amountText = ""
         note = ""
         date = Date()
-        // 连续记账：项目和支付方式保留，键盘直接回到金额
+        // 连续记账：项目和当前类型的渠道选择保留，键盘直接回到金额
         amountFocused = true
     }
 }

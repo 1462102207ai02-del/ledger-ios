@@ -287,6 +287,7 @@ struct RecordEditorView: View {
 
     /// 与记一笔页一致：用 Binding setter 处理收支类型切换，相同值直接忽略，
     /// 避免 .onChange(of:) 在视图重建 / Picker 重新绑定时误把项目重置成第一项。
+    /// 切换方向时渠道也要换到对应分组，否则会把「支付方式」的值带进「收款方式」。
     private var typeBinding: Binding<RecordType> {
         Binding(
             get: { type },
@@ -294,12 +295,23 @@ struct RecordEditorView: View {
                 guard newType != type else { return }
                 type = newType
                 categoryName = store.categories.first { $0.type == newType }?.name ?? ""
+                paymentName = store.methodList(newType.methodGroup).first?.name ?? ""
             }
         )
     }
 
     private var availableCategories: [Category] {
         store.categories.filter { $0.type == type }
+    }
+
+    private var methodTitle: String { type.methodGroup.title }
+
+    private var availableMethods: [PaymentMethod] {
+        store.methodList(type.methodGroup)
+    }
+
+    private var methodOptions: [PickerOption] {
+        PickerOption.list(from: availableMethods.map { $0.name }, current: paymentName)
     }
 
     private var amount: Double {
@@ -339,11 +351,11 @@ struct RecordEditorView: View {
                     }
                 }
 
-                Section(header: Text("支付方式")) {
+                Section(header: Text(methodTitle)) {
                     PickerEntryButton(title: paymentName,
-                                      count: store.paymentMethods.count,
-                                      systemImage: "creditcard") {
-                        activePicker = .payment
+                                      count: availableMethods.count,
+                                      systemImage: type.methodGroup.systemImage) {
+                        activePicker = .method
                     }
                 }
 
@@ -410,10 +422,10 @@ struct RecordEditorView: View {
                         selected: $categoryName,
                         onClose: { activePicker = nil }
                     )
-                case .payment:
+                case .method:
                     CenteredPickerDialog(
-                        title: "选择支付方式",
-                        options: store.paymentMethods.map { PickerOption(name: $0.name) },
+                        title: "选择\(methodTitle)",
+                        options: methodOptions,
                         selected: $paymentName,
                         onClose: { activePicker = nil }
                     )
@@ -427,7 +439,7 @@ struct RecordEditorView: View {
         guard canSave else { return }
         // 现场输入的自定义项目，随这次修改一起落库到对应分组
         store.absorbCustomSelections(categoryName: categoryName, type: type,
-                                     paymentName: paymentName)
+                                     methodName: paymentName)
         let updated = Transaction(
             id: original.id,
             type: type,

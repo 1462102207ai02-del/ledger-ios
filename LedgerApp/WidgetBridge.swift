@@ -28,6 +28,7 @@ enum WidgetSnapshotBuilder {
             updatedAt: now,
             data: AppData(categories: source.categories,
                           paymentMethods: source.paymentMethods,
+                          receiptMethods: source.receiptMethods,
                           records: records)
         )
     }

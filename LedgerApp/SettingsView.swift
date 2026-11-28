@@ -18,12 +18,14 @@ struct SettingsView: View {
     @State private var newExpense = ""
     @State private var newIncome = ""
     @State private var newPayment = ""
+    @State private var newReceipt = ""
     @State private var showResetConfirm = false
 
-    // 三个大类默认收起：进设置页先看到分组，点开才铺开项目清单
+    // 四个大类默认收起：进设置页先看到分组，点开才铺开项目清单
     @State private var expenseExpanded = false
     @State private var incomeExpanded = false
     @State private var paymentExpanded = false
+    @State private var receiptExpanded = false
 
     // 重命名弹窗状态
     @State private var renameTarget: RenameTarget?
@@ -36,19 +38,19 @@ struct SettingsView: View {
 
     private enum RenameTarget: Identifiable {
         case category(Category)
-        case payment(PaymentMethod)
+        case method(PaymentMethod, MethodGroup)
 
         var id: String {
             switch self {
             case .category(let c): return "c-\(c.id.uuidString)"
-            case .payment(let m): return "p-\(m.id.uuidString)"
+            case .method(let m, let g): return "m-\(g.rawValue)-\(m.id.uuidString)"
             }
         }
 
         var currentName: String {
             switch self {
             case .category(let c): return c.name
-            case .payment(let m): return m.name
+            case .method(let m, _): return m.name
             }
         }
     }
@@ -59,9 +61,9 @@ struct SettingsView: View {
     var body: some View {
         NavigationView {
             Form {
-                // 三个大类收进同一个分组，每个分组一个可折叠的头，默认全部收起
+                // 四个大类收进同一个分组，每个分组一个可折叠的头，默认全部收起
                 Section(header: Text("分类管理"),
-                        footer: Text("点开分组可查看、重命名或删除项目。在记账弹窗里现场输入的自定义项目，会随该笔账单保存后自动归到这里。")) {
+                        footer: Text("支出使用「支付方式」，收入使用「收款方式」，两组可分别自定义。点开分组可查看、重命名或删除项目；记账弹窗里现场输入的自定义名称，会随该笔账单保存后自动归到对应分组。")) {
                     groupHeader("支出项目", count: expenseCount, isExpanded: $expenseExpanded)
                     if expenseExpanded {
                         categoryRows(type: .expense)
@@ -83,16 +85,20 @@ struct SettingsView: View {
                     groupHeader("支付方式", count: store.paymentMethods.count,
                                 isExpanded: $paymentExpanded)
                     if paymentExpanded {
-                        ForEach(store.paymentMethods) { m in
-                            Text(m.name)
-                                .modifier(ItemSwipeActions(
-                                    delete: { store.deletePaymentMethod(m) },
-                                    rename: { beginRename(.payment(m)) }
-                                ))
-                        }
+                        methodRows(.payment)
                         addRow(placeholder: "新增支付方式", text: $newPayment) {
-                            store.addPaymentMethod(name: newPayment)
+                            store.addMethod(name: newPayment, to: .payment)
                             newPayment = ""
+                        }
+                    }
+
+                    groupHeader("收款方式", count: store.receiptMethods.count,
+                                isExpanded: $receiptExpanded)
+                    if receiptExpanded {
+                        methodRows(.receipt)
+                        addRow(placeholder: "新增收款方式", text: $newReceipt) {
+                            store.addMethod(name: newReceipt, to: .receipt)
+                            newReceipt = ""
                         }
                     }
                 }
@@ -168,7 +174,7 @@ struct SettingsView: View {
             .alert("名称无效", isPresented: $showRenameError) {
                 Button("好的", role: .cancel) {}
             } message: {
-                Text("名称不能为空，也不能与同类型的已有项目重名。")
+                Text("名称不能为空，也不能与同一分组内的已有项目重名。")
             }
             .alert("恢复预置项目？", isPresented: $showResetConfirm) {
                 Button("取消", role: .cancel) {}
@@ -176,7 +182,7 @@ struct SettingsView: View {
                     store.resetToDefaults()
                 }
             } message: {
-                Text("自定义的项目与支付方式会被移除，已记录的账目不受影响。")
+                Text("自定义的项目、支付方式与收款方式会被移除，已记录的账目不受影响。")
             }
         }
     }
@@ -213,6 +219,16 @@ struct SettingsView: View {
                 .modifier(ItemSwipeActions(
                     delete: { store.deleteCategory(c) },
                     rename: { beginRename(.category(c)) }
+                ))
+        }
+    }
+
+    private func methodRows(_ group: MethodGroup) -> some View {
+        ForEach(store.methodList(group)) { m in
+            Text(m.name)
+                .modifier(ItemSwipeActions(
+                    delete: { store.deleteMethod(m, from: group) },
+                    rename: { beginRename(.method(m, group)) }
                 ))
         }
     }
@@ -257,8 +273,9 @@ struct SettingsView: View {
             exists = store.categories.contains {
                 $0.id != c.id && $0.type == c.type && $0.name == trimmed
             }
-        case .payment(let m):
-            exists = store.paymentMethods.contains { $0.id != m.id && $0.name == trimmed }
+        case .method(let m, let group):
+            // 只在同一分组内查重：支付方式与收款方式允许各自叫「微信」。
+            exists = store.methodList(group).contains { $0.id != m.id && $0.name == trimmed }
         }
         if trimmed.isEmpty || exists {
             showRenameError = true
@@ -267,8 +284,8 @@ struct SettingsView: View {
         switch target {
         case .category(let c):
             store.renameCategory(c, to: trimmed)
-        case .payment(let m):
-            store.renamePaymentMethod(m, to: trimmed)
+        case .method(let m, let group):
+            store.renameMethod(m, in: group, to: trimmed)
         }
         renameTarget = nil
     }
