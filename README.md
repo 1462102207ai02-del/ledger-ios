@@ -105,6 +105,25 @@ python scripts/inspect-profile.py C:/Users/Administrator/Desktop/证书.zip
 
 也可以把文件放到桌面后把路径告诉我，我来跑。判断依据：描述文件 `Entitlements` → `application-identifier`，去掉 `TeamID.` 前缀后若含 `*` 就是通配符。
 
+#### 实测样本：`证书_00008120-001E386A0CEBC01E.zip`（全能签下发证书）
+
+脚本实跑结果，这也是「p12 自签装不上」的**最终定性证据**：
+
+| 字段 | 值 | 含义 |
+| --- | --- | --- |
+| `application-identifier` | `336W4P3WL5.app.eclipse296.lake3160` | **精确 App ID**，且与原包主 App ID `com.mazexin.Bookkeeping` 完全无关 |
+| `get-task-allow` / `aps-environment` | `False` / `production` | Ad Hoc / 分发型描述文件 |
+| `ProvisionedDevices` | 1 个 | 设备已绑定，UDID 不是问题 |
+| `ExpirationDate` | 2027-07-02 | 证书有效，过期不是问题 |
+| `com.apple.security.application-groups` | 5 个 `group.fc4eef5efa34e964.1~5` | 多开 / 企业签名证书常见的实例隔离组 |
+| `keychain-access-groups` | `336W4P3WL5.*` | 数据兜底通道可用 |
+
+脚本判定：**覆盖主 App ID = 否，覆盖 Widget ID = 否**。
+
+这解释了 A/B 的每一环：全能签为了装上，必须把主 App 的 Bundle ID 改成 `app.eclipse296.lake3160`（教程要求「Bundle ID 与证书 App ID 完全一致」）；而 `PlugIns` 里的 appex 仍是 `com.mazexin.Bookkeeping.widget`，**既不是新主 App ID 的前缀子域，也不在精确 App ID 的授权范围内 → 双重不匹配**。把 `PlugIns` 删掉后只剩被改写的主 App，于是装上了。
+
+> **精确 App ID 不授权任何子域**：即使把 widget 的 ID 改成 `app.eclipse296.lake3160.widget` 也无效。所以这套证书下，带小组件的包**物理上装不上，改包没用**。要保留小组件只能换一份通配符 App ID 的描述文件（需找下发方），或改用 TrollStore / 桌面端递归签名工具。
+
 ### 小组件数据怎么传（不再硬依赖 App Group）
 
 | 优先级 | 通道 | 生效条件 | 说明 |

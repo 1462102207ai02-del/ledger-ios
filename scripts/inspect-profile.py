@@ -105,6 +105,21 @@ def describe(label: str, raw: bytes):
     is_wildcard = "*" in bundle_pattern
     print("  App ID 类型   :", "通配符 ✅" if is_wildcard else "精确 ID ❌")
 
+    def covers(pattern, bundle_id):
+        """pattern 是否授权 bundle_id。精确 ID 不授权任何子域。"""
+        if pattern == "*":
+            return True
+        if pattern.endswith(".*"):
+            head = pattern[:-1]  # 保留末尾的点
+            return bundle_id.startswith(head)
+        return pattern == bundle_id
+
+    main_covered = covers(bundle_pattern, MAIN_ID) if app_id else False
+    widget_covered = covers(bundle_pattern, WIDGET_ID) if app_id else False
+    if app_id:
+        print("  覆盖主 App ID  :", "是" if main_covered else "否 ⚠️ 工具会改写主 App Bundle ID")
+        print("  覆盖 Widget ID :", "是 ✅" if widget_covered else "否 ❌")
+
     print("  --- 关键 entitlements ---")
     for key in ("get-task-allow", "aps-environment",
                 "com.apple.security.application-groups",
@@ -114,21 +129,33 @@ def describe(label: str, raw: bytes):
         if val is not None:
             print(f"    {key:45s} = {val}")
 
+    groups = ent.get("com.apple.security.application-groups") or []
+    if len(groups) > 1:
+        print("  ℹ️  带多个 App Group（常见于多开 / 企业签名证书，用于实例隔离）。")
+
     print("  --- 结论 ---")
     if not app_id:
         print("  !! 描述文件里没有 application-identifier，无法重签")
-    elif is_wildcard:
-        print("  ✅ 通配符 App ID：可同时覆盖主 App 与 .widget 扩展。")
-        print("     只要重签工具递归签 PlugIns/LedgerWidget.appex，主包就能带小组件安装。")
-        print("     若全能签仍装不上，几乎可以确定是工具只签了主 App / 改写了主 App Bundle ID")
-        print("     却没同步改写 appex 的 Bundle ID（扩展 ID 必须是主 App ID 的前缀）。")
+    elif widget_covered:
+        print("  ✅ 这份描述文件同时授权主 App 与 .widget。")
+        print("     只要工具递归重签 PlugIns/LedgerWidget.appex，主包就能带小组件安装。")
+        print("     签名时不要改 Bundle Identifier、不要开多开。")
+        if not main_covered:
+            print("     ⚠️ 但它不授权主 App 原本的 ID，工具仍会改写主 App ID；")
+            print("        需确认 widget ID 被同步改成新主 App ID 的前缀子域。")
     else:
-        print("  ❌ 精确 App ID：只授权", bundle_pattern)
-        print("     com.mazexin.Bookkeeping.widget 不在授权范围内 → 安装时 0xE8008016")
-        print("     → 「无法安装，请稍后再试」。这就是 A/B 诊断确认的根因。")
+        print("  ❌ 这份描述文件不授权 com.mazexin.Bookkeeping.widget → 0xE8008016")
+        if not is_wildcard:
+            print("     精确 App ID 不授权任何子域：即使工具把 widget 改成")
+            print("     " + bundle_pattern + ".widget，仍不在授权范围内。")
+        if not main_covered:
+            print("     ⚠️ 且 App ID 与主 App 原本的 ID 不一致，全能签必然改写主 App ID")
+            print("        才能装上（去掉 PlugIns 的诊断包能装就是证据）；而 appex ID 不会")
+            print("        跟着改，既不是新主 App ID 的前缀子域、也不在授权范围内 → 双重不匹配。")
+        print("     → 这套证书下带小组件的包物理上装不上，改包也没用。")
         print("     解法：① 找证书下发方换一份通配符 App ID 的描述文件；")
-        print("           ② 或让工具为 .widget 单独生成描述文件；")
-        print("           ③ 或使用桌面上去掉 PlugIns 的 快捷记账-无小组件-诊断用.ipa。")
+        print("           ② 用桌面 快捷记账-无小组件-诊断用.ipa（A/B 已验证可装）；")
+        print("           ③ 或 TrollStore 装主包（带小组件）。")
 
     if ent.get("com.apple.security.application-groups"):
         print("  ℹ️  该描述文件带 App Group：小组件数据可走共享容器（最完整）。")
