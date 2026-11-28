@@ -42,10 +42,13 @@ private struct DashedLine: View {
 // MARK: - 柱状趋势图（纯 SwiftUI 自绘，兼容 iOS 15）
 /// 完整柱状图：Y 轴刻度、虚线网格与基线、日均参考线、圆角柱、
 /// 峰值/选中高亮、点按数值气泡、X 轴标签、图例与合计信息。
+/// legend / emptyText 由调用方按收支方向传入，图里不再写死「支出」。
 private struct TrendChart: View {
     let values: [Double]
     let labels: [String]
     let tint: Color
+    let legend: String
+    let emptyText: String
     var height: CGFloat = 168
 
     @State private var selectedIndex: Int? = nil
@@ -84,7 +87,7 @@ private struct TrendChart: View {
                     RoundedRectangle(cornerRadius: 2)
                         .fill(tint)
                         .frame(width: 10, height: 10)
-                    Text("支出").font(.caption2).foregroundColor(.secondary)
+                    Text(legend).font(.caption2).foregroundColor(.secondary)
                 }
                 HStack(spacing: 5) {
                     DashedLine(color: tint.opacity(0.6))
@@ -200,7 +203,7 @@ private struct TrendChart: View {
 
                         // 全零时的空状态，而不是一排空槽
                         if total <= 0 {
-                            Text("这段区间还没有支出")
+                            Text(emptyText)
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                                 .frame(width: w, height: h, alignment: .center)
@@ -235,6 +238,149 @@ private struct TrendChart: View {
     }
 }
 
+// MARK: - 按方向参数化的月度统计数据源
+/// 首页卡片与详情页共用同一份计算，支出/收入只是传入不同的 type。
+/// 汇总一律走 Decimal，避免大量小额累加后的浮点误差。
+private struct MonthStats {
+    let type: RecordType
+    let total: Decimal
+    let count: Int
+    let dayCount: Int
+    let previousTotal: Decimal
+    let categorySums: [(name: String, value: Double)]
+    let methodSums: [(name: String, value: Double)]
+    let dailyTrend: [Double]
+    let dailyLabels: [String]
+    let recentMonths: [MonthPoint]
+
+    private static let monthFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "zh_CN")
+        f.dateFormat = "M月"
+        return f
+    }()
+
+    var dailyAverage: Decimal {
+        guard dayCount > 0 else { return 0 }
+        return total / Decimal(dayCount)
+    }
+
+    /// 上月同方向总额为 0 时不显示环比，避免出现除零或「∞%」。
+    var changeRatio: Double? {
+        guard previousTotal > 0 else { return nil }
+        return Money.double((total - previousTotal) / previousTotal)
+    }
+
+    private static func sums(_ items: [Transaction], by key: (Transaction) -> String)
+        -> [(name: String, value: Double)] {
+        var dict: [String: Decimal] = [:]
+        for r in items {
+            dict[key(r), default: Decimal(0)] += Money.decimal(r.amount)
+        }
+        return dict.map { (name: $0.key, value: Money.double($0.value)) }
+                   .sorted { $0.value > $1.value }
+    }
+
+    static func make(records: [Transaction], month: Date, type: RecordType,
+                     cal: Calendar = .current) -> MonthStats {
+        let items = records.filter {
+            cal.isDate($0.date, equalTo: month, toGranularity: .month) && $0.type == type
+        }
+        let total = Money.sum(items.map { $0.amount })
+
+        // 当月每日趋势与 X 轴标签：只标 1 / 10 / 20 / 月末，避免 31 个标签挤成一团
+        var daily: [Double] = []
+        var labels: [String] = []
+        var dayCount = 0
+        if let range = cal.range(of: .day, in: .month, for: month),
+           let start = cal.date(from: cal.dateComponents([.year, .month], from: month)) {
+            dayCount = range.count
+            for dayNumber in range {
+                let day = cal.date(byAdding: .day, value: dayNumber - 1, to: start) ?? start
+                let dayItems = items.filter { cal.isDate($0.date, inSameDayAs: day) }
+                daily.append(Money.double(Money.sum(dayItems.map { $0.amount })))
+                let show = dayNumber == 1 || dayNumber == 10 || dayNumber == 20 || dayNumber == range.count
+                labels.append(show ? "\(dayNumber)" : "")
+            }
+        }
+
+        // 近 6 个月同方向合计
+        var recent: [MonthPoint] = []
+        var previous: Decimal = 0
+        if let start = cal.date(from: cal.dateComponents([.year, .month], from: month)) {
+            for offset in (0..<6).reversed() {
+                guard let m = cal.date(byAdding: .month, value: -offset, to: start) else { continue }
+                let mItems = records.filter {
+                    cal.isDate($0.date, equalTo: m, toGranularity: .month) && $0.type == type
+                }
+                recent.append(MonthPoint(label: monthFormatter.string(from: m),
+                                         value: Money.double(Money.sum(mItems.map { $0.amount }))))
+            }
+            if let p = cal.date(byAdding: .month, value: -1, to: start) {
+                let pItems = records.filter {
+                    cal.isDate($0.date, equalTo: p, toGranularity: .month) && $0.type == type
+                }
+                previous = Money.sum(pItems.map { $0.amount })
+            }
+        }
+
+        return MonthStats(
+            type: type,
+            total: total,
+            count: items.count,
+            dayCount: dayCount,
+            previousTotal: previous,
+            categorySums: sums(items, by: { $0.categoryName }),
+            methodSums: sums(items, by: { $0.paymentMethodName }),
+            dailyTrend: daily,
+            dailyLabels: labels,
+            recentMonths: recent
+        )
+    }
+}
+
+// MARK: - 月份切换器（统计首页与详情页共用同一个绑定，切月状态同步）
+private struct MonthSwitcher: View {
+    @Binding var month: Date
+
+    private var cal: Calendar { Calendar.current }
+
+    private static let titleFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "zh_CN")
+        f.dateFormat = "yyyy年M月"
+        return f
+    }()
+
+    private var isCurrentMonth: Bool {
+        cal.isDate(month, equalTo: Date(), toGranularity: .month)
+    }
+
+    private func shift(_ delta: Int) {
+        if let d = cal.date(byAdding: .month, value: delta, to: month) { month = d }
+    }
+
+    var body: some View {
+        HStack {
+            Button { shift(-1) } label: {
+                Image(systemName: "chevron.left")
+            }
+            .buttonStyle(.bordered)
+
+            Spacer()
+            Text(Self.titleFormatter.string(from: month)).font(.headline)
+            Spacer()
+
+            Button { shift(1) } label: {
+                Image(systemName: "chevron.right")
+            }
+            .buttonStyle(.bordered)
+            .disabled(isCurrentMonth)
+        }
+    }
+}
+
+// MARK: - 统计首页：支出 / 收入两组，各一张卡片
 struct StatisticsView: View {
     @EnvironmentObject var store: DataStore
 
@@ -250,79 +396,28 @@ struct StatisticsView: View {
         store.records.filter { isInSelectedMonth($0.date) }
     }
 
-    private var monthExpense: Decimal { Money.sum(monthRecords, type: .expense) }
-    private var monthIncome: Decimal { Money.sum(monthRecords, type: .income) }
-    private var monthBalance: Decimal { monthIncome - monthExpense }
-
-    private var categorySums: [(name: String, value: Double)] {
-        var dict: [String: Decimal] = [:]
-        for r in monthRecords where r.type == .expense {
-            dict[r.categoryName, default: Decimal(0)] += Money.decimal(r.amount)
-        }
-        return dict.map { (name: $0.key, value: Money.double($0.value)) }
-                   .sorted { $0.value > $1.value }
+    private var balance: Decimal {
+        Money.sum(monthRecords, type: .income) - Money.sum(monthRecords, type: .expense)
     }
 
-    private var paymentSums: [(name: String, value: Double)] {
-        var dict: [String: Decimal] = [:]
-        for r in monthRecords where r.type == .expense {
-            dict[r.paymentMethodName, default: Decimal(0)] += Money.decimal(r.amount)
-        }
-        return dict.map { (name: $0.key, value: Money.double($0.value)) }
-                   .sorted { $0.value > $1.value }
-    }
-
-    /// 选中月份内每一天的支出，用于日趋势。
-    private var dailyTrend: [Double] {
-        guard let range = cal.range(of: .day, in: .month, for: anchorMonth),
-              let start = cal.date(from: cal.dateComponents([.year, .month], from: anchorMonth)) else {
-            return []
-        }
-        return range.compactMap { dayNumber -> Double in
-            guard let day = cal.date(byAdding: .day, value: dayNumber - 1, to: start) else { return 0 }
-            let items = monthRecords.filter {
-                cal.isDate($0.date, inSameDayAs: day) && $0.type == .expense
-            }
-            return Money.double(Money.sum(items, type: .expense))
-        }
-    }
-
-    /// X 轴只标少量日期，避免 31 个标签挤成一团。
-    private var dailyLabels: [String] {
-        dailyTrend.indices.map { i in
-            let day = i + 1
-            let show = day == 1 || day == 10 || day == 20 || i == dailyTrend.count - 1
-            return show ? "\(day)" : ""
-        }
-    }
-
-    /// 近 6 个月支出，用于月趋势。
-    private var recentMonths: [MonthPoint] {
-        guard let start = cal.date(from: cal.dateComponents([.year, .month], from: anchorMonth)) else {
-            return []
-        }
-        return (0..<6).reversed().compactMap { offset in
-            guard let m = cal.date(byAdding: .month, value: -offset, to: start) else { return nil }
-            let items = store.records.filter {
-                cal.isDate($0.date, equalTo: m, toGranularity: .month) && $0.type == .expense
-            }
-            let f = DateFormatter()
-            f.locale = Locale(identifier: "zh_CN")
-            f.dateFormat = "M月"
-            return MonthPoint(label: f.string(from: m),
-                              value: Money.double(Money.sum(items, type: .expense)))
-        }
+    private func stats(for type: RecordType) -> MonthStats {
+        MonthStats.make(records: store.records, month: anchorMonth, type: type)
     }
 
     var body: some View {
         NavigationView {
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    monthSwitcher
-                    summaryCard
-                    trendSection
-                    categorySection
-                    paymentSection
+                VStack(alignment: .leading, spacing: 16) {
+                    MonthSwitcher(month: $anchorMonth)
+                    balanceBanner
+                    ForEach(RecordType.allCases) { type in
+                        NavigationLink(
+                            destination: StatisticsDetailView(type: type, month: $anchorMonth)
+                        ) {
+                            StatGroupCard(stats: stats(for: type))
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
                 .padding()
             }
@@ -330,112 +425,204 @@ struct StatisticsView: View {
         }
     }
 
-    private var monthSwitcher: some View {
+    /// 结余不单独占一张卡：保留为一行小字，避免与两组主卡竞争视觉。
+    private var balanceBanner: some View {
         HStack {
-            Button {
-                shiftMonth(-1)
-            } label: {
-                Image(systemName: "chevron.left")
-            }
-            .buttonStyle(.bordered)
-
+            Text("本月结余").font(.subheadline).foregroundColor(.secondary)
             Spacer()
-            Text(monthTitle).font(.headline)
-            Spacer()
+            Text(Money.string(balance))
+                .font(.subheadline.weight(.semibold))
+                .foregroundColor(Money.double(balance) < 0 ? .red : .green)
+        }
+        .padding(.horizontal, 4)
+    }
+}
 
-            Button {
-                shiftMonth(1)
-            } label: {
+/// 分组卡片：只外显主要数据，点按进入该方向的完整统计详情。
+private struct StatGroupCard: View {
+    let stats: MonthStats
+
+    private var tint: Color { stats.type == .expense ? .red : .green }
+    private var icon: String {
+        stats.type == .expense ? "arrow.up.circle.fill" : "arrow.down.circle.fill"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .foregroundColor(tint)
+                    .imageScale(.medium)
+                Text(stats.type.rawValue).font(.headline)
+                Spacer(minLength: 6)
+                if let ratio = stats.changeRatio {
+                    Text(String(format: "较上月 %+.1f%%", ratio * 100))
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                } else {
+                    Text("上月无记录")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
                 Image(systemName: "chevron.right")
+                    .foregroundColor(.secondary)
+                    .imageScale(.small)
             }
-            .buttonStyle(.bordered)
-            .disabled(isCurrentMonth)
+
+            Text(Money.string(stats.total))
+                .font(.system(size: 28, weight: .bold))
+                .foregroundColor(tint)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+
+            HStack(spacing: 6) {
+                Text("\(stats.count) 笔")
+                Text("·")
+                Text("日均 \(Money.string(stats.dailyAverage))")
+            }
+            .font(.caption)
+            .foregroundColor(.secondary)
+
+            if let top = stats.categorySums.first {
+                HStack(spacing: 5) {
+                    Text("最大项").font(.caption).foregroundColor(.secondary)
+                    Text(top.name).font(.caption).lineLimit(1)
+                    Spacer(minLength: 6)
+                    Text(Money.string(top.value))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            } else {
+                Text("本月暂无\(stats.type.rawValue)记录")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
         }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(.systemGray6))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(tint.opacity(0.28), lineWidth: 1)
+        )
+    }
+}
+
+// MARK: - 统计详情：同一套图表，按方向过滤
+private struct StatisticsDetailView: View {
+    @EnvironmentObject var store: DataStore
+    let type: RecordType
+    /// 与首页共享同一个月份：在详情里切月，返回后首页也是同一月。
+    @Binding var month: Date
+
+    private var stats: MonthStats {
+        MonthStats.make(records: store.records, month: month, type: type)
     }
 
-    private var isCurrentMonth: Bool {
-        cal.isDate(anchorMonth, equalTo: Date(), toGranularity: .month)
-    }
+    private var tint: Color { type == .expense ? .red : .green }
+    private var accent: Color { type == .expense ? .orange : .mint }
+    private var methodTitle: String { type.methodGroup.title }
+    private var categoryTitle: String { type == .expense ? "支出项目" : "收入项目" }
 
-    private func shiftMonth(_ delta: Int) {
-        if let d = cal.date(byAdding: .month, value: delta, to: anchorMonth) {
-            anchorMonth = d
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                MonthSwitcher(month: $month)
+                overview
+                trendSection
+                categorySection
+                methodSection
+            }
+            .padding()
         }
+        .navigationTitle("\(type.rawValue)统计")
+        .navigationBarTitleDisplayMode(.inline)
     }
 
-    private var monthTitle: String {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "zh_CN")
-        f.dateFormat = "yyyy年M月"
-        return f.string(from: anchorMonth)
-    }
-
-    private var summaryCard: some View {
-        HStack {
-            StatColumn(title: "支出", value: Money.string(monthExpense), color: .red)
-            Divider().frame(height: 36)
-            StatColumn(title: "收入", value: Money.string(monthIncome), color: .green)
-            Divider().frame(height: 36)
-            StatColumn(title: "结余",
-                       value: Money.string(monthBalance),
-                       color: Money.double(monthBalance) < 0 ? .red : .green)
+    private var overview: some View {
+        HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("\(type.rawValue)合计").font(.caption).foregroundColor(.secondary)
+                Text(Money.string(stats.total))
+                    .font(.title2.weight(.bold))
+                    .foregroundColor(tint)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            Spacer(minLength: 8)
+            VStack(alignment: .trailing, spacing: 4) {
+                Text("\(stats.count) 笔").font(.subheadline)
+                Text("日均 \(Money.string(stats.dailyAverage))")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
         }
-        .padding()
-        .background(Color(.systemGray6))
-        .cornerRadius(14)
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color(.systemGray6))
+        )
     }
 
     private var trendSection: some View {
         VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 8) {
-                Text("本月每日支出").font(.headline)
-                if dailyTrend.isEmpty {
+                Text("每日\(type.rawValue)").font(.headline)
+                if stats.dailyTrend.isEmpty {
                     Text("暂无数据").foregroundColor(.secondary).font(.subheadline)
                 } else {
-                    TrendChart(values: dailyTrend, labels: dailyLabels,
-                               tint: .red, height: 172)
+                    TrendChart(values: stats.dailyTrend, labels: stats.dailyLabels,
+                               tint: tint, legend: type.rawValue,
+                               emptyText: "这段区间还没有\(type.rawValue)", height: 172)
                 }
             }
             VStack(alignment: .leading, spacing: 8) {
-                Text("近 6 个月支出").font(.headline)
-                TrendChart(values: recentMonths.map { $0.value },
-                           labels: recentMonths.map { $0.label },
-                           tint: .orange, height: 150)
+                Text("近 6 个月\(type.rawValue)").font(.headline)
+                TrendChart(values: stats.recentMonths.map { $0.value },
+                           labels: stats.recentMonths.map { $0.label },
+                           tint: accent, legend: type.rawValue,
+                           emptyText: "近 6 个月没有\(type.rawValue)记录", height: 150)
             }
         }
     }
 
     private var categorySection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("本月支出 · 按项目").font(.headline)
-            if categorySums.isEmpty {
+            Text("按\(categoryTitle)").font(.headline)
+            if stats.categorySums.isEmpty {
                 Text("暂无数据").foregroundColor(.secondary).font(.subheadline)
             } else {
-                let maxValue = categorySums.first?.value ?? 1
-                let total = categorySums.reduce(0) { $0 + $1.value }
-                ForEach(categorySums, id: \.name) { item in
+                let maxValue = stats.categorySums.first?.value ?? 1
+                let total = stats.categorySums.reduce(0) { $0 + $1.value }
+                ForEach(stats.categorySums, id: \.name) { item in
                     BarRow(title: item.name, value: item.value,
                            ratio: maxValue > 0 ? item.value / maxValue : 0,
                            share: total > 0 ? item.value / total : 0,
-                           color: .red)
+                           color: tint)
                 }
             }
         }
     }
 
-    private var paymentSection: some View {
+    /// 支出按「支付方式」、收入按「收款方式」，与记一笔页的分组口径一致。
+    private var methodSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("本月支出 · 按支付方式").font(.headline)
-            if paymentSums.isEmpty {
+            Text("按\(methodTitle)").font(.headline)
+            if stats.methodSums.isEmpty {
                 Text("暂无数据").foregroundColor(.secondary).font(.subheadline)
             } else {
-                let maxValue = paymentSums.first?.value ?? 1
-                let total = paymentSums.reduce(0) { $0 + $1.value }
-                ForEach(paymentSums, id: \.name) { item in
+                let maxValue = stats.methodSums.first?.value ?? 1
+                let total = stats.methodSums.reduce(0) { $0 + $1.value }
+                ForEach(stats.methodSums, id: \.name) { item in
                     BarRow(title: item.name, value: item.value,
                            ratio: maxValue > 0 ? item.value / maxValue : 0,
                            share: total > 0 ? item.value / total : 0,
-                           color: .blue)
+                           color: accent)
                 }
             }
         }
