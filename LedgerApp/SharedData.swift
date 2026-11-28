@@ -6,10 +6,27 @@ enum SharedStorage {
     /// 旧包 / 无描述文件时的回退值。注意：这个值不再写入二进制签名。
     static let legacyAppGroupID = "group.com.mazexin.Bookkeeping"
 
-    /// 运行时优先读取重签 profile 实际授权的 App Group。
-    /// 签名里保持干净（不含受限 entitlement），因此这里必须能适配任意 group 名。
+    /// 运行时探测「真正能用」的 App Group，而不是猜签名形态：
+    ///  1) 主包（TrollStore 直装）签名里声明了内置 group，containerURL 对它有效；
+    ///  2) 重签环境可能授权了 profile 里的另一个 group，内置不可用时就用它；
+    ///  3) 都不可用时回退内置值，containerURL 返回 nil，数据落到旧 Documents 路径，功能不受影响。
+    /// 用 containerURL 实测而不是只看描述文件，避免「profile 写了、系统却不认」的失配。
     static var resolvedAppGroupID: String {
-        EmbeddedProfile.appGroupID ?? legacyAppGroupID
+        let fm = FileManager.default
+        for candidate in candidateGroupIDs {
+            if fm.containerURL(forSecurityApplicationGroupIdentifier: candidate) != nil {
+                return candidate
+            }
+        }
+        return legacyAppGroupID
+    }
+
+    private static var candidateGroupIDs: [String] {
+        var ids = [legacyAppGroupID]
+        if let profile = EmbeddedProfile.appGroupID, !ids.contains(profile) {
+            ids.append(profile)
+        }
+        return ids
     }
 
     private static let fileName = "ledger_data.json"
@@ -67,11 +84,19 @@ enum SharedStorage {
     }
 
     /// 原子写入当前账本。
+    /// App Group 可用时（TrollStore 主包）同时写共享容器与旧 Documents 路径：
+    ///  - 共享容器给小组件读，这是主通道；
+    ///  - 旧路径留一份，签名/授权变化时账本仍能被 loadResult() 找到并迁移，不会丢。
+    /// 旧路径写失败不影响共享容器，小组件照常可用。
     static func write(_ data: AppData) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let encoded = try encoder.encode(data)
-        try encoded.write(to: activeFileURL, options: .atomic)
+        let primary = activeFileURL
+        try encoded.write(to: primary, options: .atomic)
+        if primary.path != legacyFileURL.path {
+            try? encoded.write(to: legacyFileURL, options: .atomic)
+        }
     }
 
     // MARK: - 备份

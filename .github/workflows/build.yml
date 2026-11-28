@@ -35,18 +35,16 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             build
 
-      # 只产出一个通用 IPA：TrollStore 直装与真证书工具重签共用同一份包。
-      # 关键前提：
-      #  - PlugIns/LedgerWidget.appex 必须保留，小组件才存在（与证书无关）
-      #  - 二进制签名必须「干净」：不写入任何受限 entitlement。
-      #    旧版把 com.apple.security.application-groups 用 ldid 硬写进签名，
-      #    p12 重签时 profile 不带同名 App Group，安装校验会直接失败。
-      #    小组件数据改由「运行时动态发现的 App Group / Keychain 快照」传递。
-      #  - 签名骨架必须「标准」：ldid 只生成二进制里的 CodeDirectory，
-      #    不生成 _CodeSignature/CodeResources（资源 seal）。TrollStore 靠
-      #    CoreTrust 不校验 seal 所以能装，但 p12 走标准 installd 校验时
-      #    缺 seal 会直接判「无法安装」。改用 codesign 生成完整骨架。
-      #  - 真证书工具重签时会覆盖签名，但不会删插件 / 改代码，装的仍是这个包
+      # 代码完全相同，只产出两种签名形态（桌面仍交付三个包）：
+      #   LedgerApp.ipa       —— 带 App Group 授权，给 TrollStore 直装，小组件走共享容器
+      #   LedgerApp-clean.ipa —— 干净 ad-hoc 签名，作为 p12/全能签重签包的派生基准
+      #
+      # 为什么要分开：
+      #  com.apple.security.application-groups 是受限 entitlement，p12 重签时
+      #  profile 不带同名 group 会被 installd 判为未授权；而 TrollStore 靠
+      #  CoreTrust 信任任意 entitlement，共享容器正是它最可靠的数据通道。
+      #  早期为了 p12 把所有 entitlement 去掉，结果 TrollStore 下 containerURL
+      #  返回 nil、Keychain 又没有共享 access group，小组件两条通道同时断掉。
       - name: Sign and package universal IPA
         run: |
           APP_PATH="build/Build/Products/Release-iphoneos/LedgerApp.app"
@@ -70,32 +68,46 @@ jobs:
           # 清掉扩展属性，避免 codesign 报 "resource fork / detritus not allowed"
           xattr -cr "$APP_PATH" 2>/dev/null || true
 
-          # codesign -s - 会生成完整的 _CodeSignature/CodeResources（资源 seal），
-          # 且同样不写入任何 entitlement，既满足标准 installd 校验，
-          # 又不会与重签工具自己的 profile 冲突。
-          # 顺序必须是「先签嵌套 appex，再签外层 App」，否则外层 seal 把嵌套代码
-          # 记成无效，重签工具可能直接拒绝安装包。
+          # ① 干净 ad-hoc 签名：二进制不含任何受限 entitlement，给重签工具用
+          #    顺序必须是「先签嵌套 appex，再签外层 App」，否则外层 seal 把嵌套代码
+          #    记成无效，重签工具可能直接拒绝安装包。
           codesign --force --sign - --timestamp=none "$WIDGET_APP"
           codesign --force --sign - --timestamp=none "$APP_PATH"
 
-          # 硬校验 1：主 App 与小组件都必须有完整的资源 seal
-          for bundle in "$APP_PATH" "$WIDGET_APP"; do
+          # 复制一份完整 .app 作为 clean 基准（此时两个 bundle 的签名都干净）
+          rm -rf clean && mkdir -p clean
+          cp -R "$APP_PATH" clean/LedgerApp.app
+
+          # ② 带 App Group 重签：TrollStore 直装用，主 App 与 widget 共享容器由此生效
+          codesign --force --sign - --timestamp=none --entitlements entitlements.plist "$WIDGET_APP"
+          codesign --force --sign - --timestamp=none --entitlements entitlements.plist "$APP_PATH"
+
+          # 硬校验 1：两个包、四个 bundle 都必须有完整的资源 seal
+          for bundle in "$APP_PATH" "$WIDGET_APP" \
+                        "clean/LedgerApp.app" "clean/LedgerApp.app/PlugIns/LedgerWidget.appex"; do
             if [ ! -f "$bundle/_CodeSignature/CodeResources" ]; then
               echo "::error::CodeResources missing in $bundle"
               exit 1
             fi
           done
-          echo "签名核对：主 App 与小组件均有 CodeResources"
+          echo "签名核对：两个包的主 App 与小组件均有 CodeResources"
 
-          # 硬校验 2：两个可执行文件的签名里都不能残留受限 App Group。
-          for bin in "$APP_PATH/LedgerApp" "$WIDGET_APP/LedgerWidget"; do
-            ENT="$(ldid -e "$bin" 2>/dev/null || true)"
-            if printf '%s' "$ENT" | grep -q "com.apple.security.application-groups"; then
-              echo "::error::restricted App Group entitlement found in $bin"
-              exit 1
+          # 硬校验 2：主包必须带 App Group，clean 包必须干净
+          check_group() {
+            local bin="$1" expect="$2"
+            local ent
+            ent="$(codesign -d --entitlements :- "$bin" 2>/dev/null || true)"
+            if printf '%s' "$ent" | grep -q "com.apple.security.application-groups"; then
+              [ "$expect" = "present" ] || { echo "::error::unexpected App Group in $bin"; exit 1; }
+            else
+              [ "$expect" = "absent" ] || { echo "::error::App Group missing in $bin"; exit 1; }
             fi
-          done
-          echo "签名核对：主 App 与小组件均不含受限 entitlement"
+          }
+          check_group "$APP_PATH/LedgerApp" present
+          check_group "$WIDGET_APP/LedgerWidget" present
+          check_group "clean/LedgerApp.app/LedgerApp" absent
+          check_group "clean/LedgerApp.app/PlugIns/LedgerWidget.appex/LedgerWidget" absent
+          echo "签名核对：主包含 App Group，clean 包不含"
 
           # 诊断输出，便于以后凭日志定位安装失败
           codesign -dvv "$APP_PATH" 2>&1 | head -12 || true
@@ -103,18 +115,26 @@ jobs:
           rm -rf Payload && mkdir -p Payload
           cp -R "$APP_PATH" Payload/LedgerApp.app
           zip -qry LedgerApp.ipa Payload
-          ls -lh LedgerApp.ipa
 
-          echo "=== 单包内容核对 ==="
-          unzip -l LedgerApp.ipa | grep -iE "PlugIns/LedgerWidget.appex/(Info.plist|LedgerWidget)|PrivacyInfo" || true
+          rm -rf Payload && mkdir -p Payload
+          cp -R clean/LedgerApp.app Payload/LedgerApp.app
+          zip -qry LedgerApp-clean.ipa Payload
+
+          echo "=== 产物核对 ==="
+          for ipa in LedgerApp.ipa LedgerApp-clean.ipa; do
+            echo "--- $ipa ---"
+            unzip -l "$ipa" | grep -iE "PlugIns/LedgerWidget.appex/(Info.plist|LedgerWidget)$|_CodeSignature/CodeResources" || true
+          done
           IPA_COUNT="$(find . -maxdepth 1 -name '*.ipa' | wc -l | tr -d ' ')"
           echo "IPA_COUNT=$IPA_COUNT"
-          test "$IPA_COUNT" = "1" || { echo "::error::expected exactly one IPA"; exit 1; }
+          test "$IPA_COUNT" = "2" || { echo "::error::expected exactly two IPA"; exit 1; }
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
           name: LedgerApp-IPA
-          path: LedgerApp.ipa
+          path: |
+            LedgerApp.ipa
+            LedgerApp-clean.ipa
           if-no-files-found: error
           retention-days: 30

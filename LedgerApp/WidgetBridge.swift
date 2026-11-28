@@ -1,15 +1,16 @@
 import Foundation
 import Security
 
-/// 主 App 与小组件之间的数据快照。
+/// 主 App 与小组件之间的数据快照（兜底通道）。
 ///
-/// 旧版把 `com.apple.security.application-groups` 硬写进二进制签名，
-/// 这是受限 entitlement：p12 重签时 profile 不带同名 App Group，安装校验会直接失败。
-/// 现在签名保持干净，数据改走两条与后台策略兼容的通道：
-///   1) 共享容器 —— App Group ID 运行时从 embedded.mobileprovision 动态发现，
-///      重签工具/profile 带了任意 App Group 都能用，不再写死 group.com.mazexin.Bookkeeping；
-///   2) Keychain 快照 —— 不受「后台禁止读剪贴板」策略限制，
-///      profile 带 keychain-access-groups 时主 App 与小组件可跨进程读写同一条记录。
+/// 主通道是 App Group 共享容器（见 SharedStorage）：TrollStore 主包在签名里声明了
+/// group.com.mazexin.Bookkeeping，主 App 与 widget 读写同一个容器，数据最完整。
+/// 早期版本把 App Group 从签名里移除后，TrollStore 下 containerURL 返回 nil，
+/// 小组件只剩这条 Keychain 兜底；而纯 ad-hoc 签名又没有可用的共享 access group，
+/// 于是两条通道同时断，小组件显示空态。
+///
+/// 现在恢复主包的 App Group 授权，Keychain 退居兜底。写入/读取/解码失败一律打日志，
+/// 不再静默吞掉 —— 否则小组件空白时完全无法判断是哪一环断了。
 struct WidgetSnapshot: Codable {
     var updatedAt: Date
     var data: AppData
@@ -96,13 +97,21 @@ enum WidgetBridge {
     }
 
     static func write(_ snapshot: WidgetSnapshot) {
-        guard let data = try? JSONEncoder().encode(snapshot) else { return }
+        guard let data = try? JSONEncoder().encode(snapshot) else {
+            print("[快捷记账] Keychain 快照编码失败")
+            return
+        }
         let query = baseQuery()
         _ = SecItemDelete(query as CFDictionary)
         var attrs = query
         attrs[kSecValueData as String] = data
         attrs[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
-        _ = SecItemAdd(attrs as CFDictionary, nil)
+        let status = SecItemAdd(attrs as CFDictionary, nil)
+        // errSecMissingEntitlement(-34018) 常见于无 keychain-access-groups 的 ad-hoc 签名。
+        // 此时共享容器才是主通道，这里只留一条诊断信息，不影响账本落库。
+        if status != errSecSuccess {
+            print("[快捷记账] Keychain 快照写入失败 status=\(status)，由共享容器通道兜底")
+        }
     }
 
     static func read() -> WidgetSnapshot? {
@@ -110,9 +119,17 @@ enum WidgetBridge {
         query[kSecReturnData as String] = kCFBooleanTrue as Any
         query[kSecMatchLimit as String] = kSecMatchLimitOne
         var item: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
-              let data = item as? Data else { return nil }
-        return try? JSONDecoder().decode(WidgetSnapshot.self, from: data)
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess, let data = item as? Data else {
+            print("[快捷记账] Keychain 快照读取失败 status=\(status)")
+            return nil
+        }
+        do {
+            return try JSONDecoder().decode(WidgetSnapshot.self, from: data)
+        } catch {
+            print("[快捷记账] Keychain 快照解码失败: \(error)")
+            return nil
+        }
     }
 }
 

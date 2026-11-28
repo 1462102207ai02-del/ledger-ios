@@ -41,15 +41,18 @@ struct LedgerProvider: TimelineProvider {
 
     private func loadEntry() -> LedgerEntry {
         let now = Date()
-        // 通道 1：共享容器里的完整账本（App Group 可用时优先，数据最完整）。
+        // 通道 1：共享容器里的完整账本（App Group 授权后是 TrollStore 的主通道，数据最完整）。
         if let data = SharedStorage.load() {
+            print("[快捷记账] 小组件数据来自共享容器，共 \(data.records.count) 条")
             return entry(from: data, now: now)
         }
-        // 通道 2：主 App 写入的 Keychain 快照。
+        // 通道 2：主 App 写入的 Keychain 快照（共享容器不可用时的兜底）。
         // 剪贴板在 iOS 后台不可读（Apple 明确策略），所以兜底不能用 UIPasteboard。
         if let snapshot = WidgetBridge.read() {
+            print("[快捷记账] 小组件数据来自 Keychain 快照，共 \(snapshot.data.records.count) 条")
             return entry(from: snapshot.data, now: now)
         }
+        print("[快捷记账] 小组件无可用数据：共享容器与 Keychain 均未命中")
         return LedgerEntry(date: now, todayExpense: 0, todayIncome: 0,
                            monthExpense: 0, monthIncome: 0, recentItems: [])
     }
