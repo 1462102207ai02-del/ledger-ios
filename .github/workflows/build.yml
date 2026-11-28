@@ -42,6 +42,10 @@ jobs:
       #    旧版把 com.apple.security.application-groups 用 ldid 硬写进签名，
       #    p12 重签时 profile 不带同名 App Group，安装校验会直接失败。
       #    小组件数据改由「运行时动态发现的 App Group / Keychain 快照」传递。
+      #  - 签名骨架必须「标准」：ldid 只生成二进制里的 CodeDirectory，
+      #    不生成 _CodeSignature/CodeResources（资源 seal）。TrollStore 靠
+      #    CoreTrust 不校验 seal 所以能装，但 p12 走标准 installd 校验时
+      #    缺 seal 会直接判「无法安装」。改用 codesign 生成完整骨架。
       #  - 真证书工具重签时会覆盖签名，但不会删插件 / 改代码，装的仍是这个包
       - name: Sign and package universal IPA
         run: |
@@ -61,15 +65,29 @@ jobs:
           cp LedgerApp/PrivacyInfo.xcprivacy "$APP_PATH/PrivacyInfo.xcprivacy"
           cp LedgerWidget/PrivacyInfo.xcprivacy "$WIDGET_APP/PrivacyInfo.xcprivacy"
 
-          # 未签名编译不应残留签名目录，清掉后统一由 ldid 生成 ad-hoc 签名
+          # 未签名编译不产生签名目录，清掉残留后统一生成标准 ad-hoc 签名骨架
           find "$APP_PATH" -type d -name "_CodeSignature" -exec rm -rf {} + 2>/dev/null || true
+          # 清掉扩展属性，避免 codesign 报 "resource fork / detritus not allowed"
+          xattr -cr "$APP_PATH" 2>/dev/null || true
 
-          # 唯一一次签名：纯 ad-hoc 签名，不附带任何 entitlement 文件。
-          # 重签工具会基于自己的 profile 生成 entitlements，这里留白才不会冲突。
-          ldid -S "$APP_PATH/LedgerApp"
-          ldid -S "$WIDGET_APP/LedgerWidget"
+          # codesign -s - 会生成完整的 _CodeSignature/CodeResources（资源 seal），
+          # 且同样不写入任何 entitlement，既满足标准 installd 校验，
+          # 又不会与重签工具自己的 profile 冲突。
+          # 顺序必须是「先签嵌套 appex，再签外层 App」，否则外层 seal 把嵌套代码
+          # 记成无效，重签工具可能直接拒绝安装包。
+          codesign --force --sign - --timestamp=none "$WIDGET_APP"
+          codesign --force --sign - --timestamp=none "$APP_PATH"
 
-          # 硬校验：两个可执行文件的签名里都不能残留受限 App Group。
+          # 硬校验 1：主 App 与小组件都必须有完整的资源 seal
+          for bundle in "$APP_PATH" "$WIDGET_APP"; do
+            if [ ! -f "$bundle/_CodeSignature/CodeResources" ]; then
+              echo "::error::CodeResources missing in $bundle"
+              exit 1
+            fi
+          done
+          echo "签名核对：主 App 与小组件均有 CodeResources"
+
+          # 硬校验 2：两个可执行文件的签名里都不能残留受限 App Group。
           for bin in "$APP_PATH/LedgerApp" "$WIDGET_APP/LedgerWidget"; do
             ENT="$(ldid -e "$bin" 2>/dev/null || true)"
             if printf '%s' "$ENT" | grep -q "com.apple.security.application-groups"; then
@@ -78,6 +96,9 @@ jobs:
             fi
           done
           echo "签名核对：主 App 与小组件均不含受限 entitlement"
+
+          # 诊断输出，便于以后凭日志定位安装失败
+          codesign -dvv "$APP_PATH" 2>&1 | head -12 || true
 
           rm -rf Payload && mkdir -p Payload
           cp -R "$APP_PATH" Payload/LedgerApp.app

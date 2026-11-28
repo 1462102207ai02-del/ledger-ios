@@ -46,11 +46,21 @@ Bundle ID：`com.mazexin.Bookkeeping`。签名保持干净，不含任何受限 
 
 ### 只出一个包，两种装法都支持全部功能
 
-早期版本按「签名方式」拆成三个包，后来合并为单一通用包。当前版本进一步把**签名与权限解耦**：主 App 与小组件都只做纯 `ldid -S` ad-hoc 签名，**不写入任何受限 entitlement**。
+早期版本按「签名方式」拆成三个包，后来合并为单一通用包。当前版本把**签名骨架与权限解耦**：主 App 与小组件都做标准 ad-hoc 签名，**生成完整的 `_CodeSignature/CodeResources` 资源 seal，但不写入任何受限 entitlement**。
 
-### 为什么 p12 自签以前装不上
+### 为什么 p12 自签报「无法安装，请稍后再试」
 
-`com.apple.security.application-groups` 属于受限 entitlement。旧版把它硬写进两个可执行文件的签名里，而你的 p12 / provisioning profile 不会带 `group.com.mazexin.Bookkeeping`（App Group ID 全局唯一、只属于注册它的开发者团队）。重签工具若继承原 entitlements，安装校验就会因「entitlement 未被 profile 授权」失败——这是最典型的自签安装失败原因。现在签名里已经彻底没有这个键。
+这个提示是 iOS 最泛化的安装失败文案，不含错误码，说明校验在早期就被拒。按概率排列：
+
+| # | 原因 | 归属 | 处理 |
+| --- | --- | --- | --- |
+| 1 | 设备上已装过**同一 Bundle ID 的旧版**（通常是 TrollStore 版），新包换成 p12 证书 → 签名身份（Team ID）不同，iOS 拒绝覆盖 | 设备侧 | **先卸载旧的「快捷记账」再装**。切换签名类型时这是硬性前提 |
+| 2 | 旧版把受限 entitlement `com.apple.security.application-groups` 硬写进签名，profile 不带同名 App Group → 「entitlement 未被 profile 授权」 | 包侧 | 已修复：签名里彻底没有这个键；App Group 改为运行时动态发现 |
+| 3 | 只用 `ldid -S` 签二进制，不生成 `_CodeSignature/CodeResources` 资源 seal → 标准 `installd` 校验失败（TrollStore 靠 CoreTrust 不校验 seal，所以旧包只有它能装） | 包侧 | 已修复：改用 `codesign -s -`，先签 appex 再签主 App，生成完整 seal |
+| 4 | profile 的 App ID 不覆盖 `com.mazexin.Bookkeeping.widget`，或重签工具跳过 `PlugIns` | 工具侧 | 用通配符 App ID / 支持 appex 重签的工具 |
+| 5 | 证书过期 / 被吊销 / 设备 UDID 不在 profile / 设备时间不准 / iOS 16+ 未开开发者模式 | 账号设备侧 | 逐项核对 |
+
+> **包侧修复不能替代第 1 步。** 只要旧版还在设备上，换签名身份的新包就装不上。另注：包里二进制的 `__entitlements` 段为空（连 `application-identifier` 都没有），重签工具必须**自己从 profile 生成整套权限集**；若工具只会「沿用原 entitlements」，需换一个会完整重签的工具。
 
 ### 小组件数据怎么传（不再硬依赖 App Group）
 
@@ -72,13 +82,14 @@ Bundle ID：`com.mazexin.Bookkeeping`。签名保持干净，不含任何受限 
 
 ### p12 自签安装与验证清单
 
-1. 用**支持 `PlugIns` appex 重签**的工具（ESign / Feather / Sideloadly / AltStore 等）。若工具会跳过插件，小组件自然不会出现。
+0. **先卸载设备上已有的「快捷记账」**（尤其是 TrollStore 版）。同一 Bundle ID 换签名身份无法覆盖安装，这是「无法安装，请稍后再试」最常见的原因。
+1. 用**支持 `PlugIns` appex 重签、且会从 profile 生成完整 entitlements** 的工具（ESign / Feather / Sideloadly / AltStore 等）。若工具会跳过插件，小组件自然不会出现。
 2. profile 的 App ID 需能覆盖 `com.mazexin.Bookkeeping.widget`；用通配符 App ID，或让工具自动改写 appex 的 Bundle ID。Bundle ID 与 profile 不匹配是另一类常见安装失败。
 3. 若工具支持自定义 entitlements，可给主 App 与 widget **注入同一个 App Group**（名字任意），App 会自动识别并使用，小组件数据最完整。
 4. 装好后**先打开一次主 App**，让 Keychain 快照写入；再添加 / 刷新小组件。
 5. 若仍安装失败，请记录工具名称与具体报错（`0xE8008015` / `ApplicationVerificationFailed` / entitlements 相关字样等），据此继续定位——这类信息与打包无关，需要真机日志才能定性。
 
-构建流程：XcodeGen 生成工程 → xcodebuild 编译未签名 app → 一次 `ldid -S` 对主 App 与 widget 做纯净 ad-hoc 签名 → CI 校验签名里不含 `com.apple.security.application-groups` → 打包成单个 IPA → 上传 artifact。取包也可直接跑 `bash scripts/fetch-ipa.sh [commit短sha]`，会把通用版放到桌面 `快捷记账.ipa`。
+构建流程：XcodeGen 生成工程 → xcodebuild 编译未签名 app → `codesign -s -` 先签 widget appex、再签主 App，生成完整 `_CodeSignature/CodeResources` 且不写任何 entitlement → CI 硬校验「两个 bundle 都有 seal」和「签名里不含 `com.apple.security.application-groups`」→ 打包成单个 IPA → 上传 artifact。取包也可直接跑 `bash scripts/fetch-ipa.sh [commit短sha]`，会把通用版放到桌面 `快捷记账.ipa`。
 
 ## 修改内置项目
 
